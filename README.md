@@ -66,12 +66,12 @@ This repository provides **battle-tested, production-ready security mitigations*
 
 ```text
 ┌───────────────────────────────┬───────────────────────────────┐
-│  🛡️ Zero-Fuzz C-Source Diffs  │  ⚡ Instant SAPI Hardening    │
+│  [1] Zero-Fuzz C-Source Diffs │  [2] Instant SAPI Hardening   │
 │  Byte-for-byte pristine C     │  Drop-in INI configurations   │
 │  diffs enforcing --fuzz=0 to  │  and reverse-proxy filters    │
 │  prevent opcode misalignment. │  without C recompilation.     │
 ├───────────────────────────────┼───────────────────────────────┤
-│  🔄 Atomic Lifecycle Tooling  │  🧪 Isolated E2E Verification │
+│  [3] Atomic Lifecycle Tooling │  [4] Isolated E2E Testbeds    │
 │  Automated shell drivers with │  Cross-distribution testbeds  │
 │  --preview, pre-change        │  validating runtime SAPI      │
 │  backups, and --rollback.     │  flags inside Docker/LXC.     │
