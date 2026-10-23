@@ -54,11 +54,20 @@ The repository manages two distinct categories of patch files with dedicated fil
 ### 1. File Locations
 
 - **Canonical Point-Release Patches**: Located in `cve-2026-109618-109619/php<ver>-cve-109618-109619.patch` (mirrored in `docker-image/` and `docker-image/patch-cve/`). Authored strictly against the latest official point release of each branch (`5.5.38`, `5.6.40`, `7.0.33`, `7.1.33`, `7.2.34`, `7.3.33`, `7.4.33`, `8.0.30`, `8.1.31`).
-- **Range-Portable Patches**: Located in `cve-2026-109618-109619/tools/range-patches/` (mirrored in `local-lab/codebase/tools/range-patches/`). Includes 10 patches: `php5.5` through `php8.1` `.range.patch` plus `php7.4-cve-109618-109619.guardabsent.patch`. Engineered to span multiple point releases per major branch at strict `--fuzz=0`.
+- **Range-Portable Patches**: Located in `cve-2026-109618-109619/tools/range-patches/` (mirrored in `local-lab/codebase/tools/range-patches/`). Includes 10 patches: `php5.5` through `php8.1` `.range.patch` plus `php7.4-cve-109618-109619.guardabsent.patch`. Engineered to span multiple point releases per major branch at strict `--fuzz=0`. (Note: root canonical `.patch` files are not mirrored in `local-lab/codebase/`; the lab environment deploys range patches).
 
 ### 2. Core Differences
 
-1. **Target Span**: Canonical patches target exactly one point release. Range patches target the entire minor spectrum of the branch (e.g. PHP 5.5: `5.5.9–5.5.38`; PHP 7.2: `7.2.10–7.2.34`; PHP 7.4: `7.4.3–7.4.33`; PHP 8.1: `8.1.2–8.1.34`).
+1. **Target Span**: Canonical patches target exactly one point release. Range patches target specific empirically tested point releases across the branch:
+   - **5.5**: `5.5.9, 5.5.20, 5.5.38` (21 hunks, rfc1867 hunk 2 omitted)
+   - **5.6**: `5.6.10, 5.6.25, 5.6.40`
+   - **7.0**: `7.0.10, 7.0.20, 7.0.33`
+   - **7.1**: `7.1.10, 7.1.20, 7.1.33`
+   - **7.2**: `7.2.10, 7.2.20, 7.2.24, 7.2.34`
+   - **7.3**: `7.3.10, 7.3.20, 7.3.33`
+   - **7.4**: `7.4.3, 7.4.10, 7.4.20` (`.guardabsent`) and `7.4.33` (`.range`)
+   - **8.0**: `8.0.20, 8.0.30` (`8.0.10` has 1 remaining hunk conflict)
+   - **8.1**: `8.1.2, 8.1.25, 8.1.31, 8.1.34` (`8.1.16` has 1 remaining hunk conflict)
 2. **VM Dispatcher Generation**: Canonical patches directly modify the generated `Zend/zend_vm_execute.h` (34+ hunks), which breaks on earlier minors where opcodes shifted. Range patches drop all `zend_vm_execute.h` hunks, patch only `Zend/zend_vm_def.h` (4 hunks), and dynamically regenerate `zend_vm_execute.h` via `Zend/zend_vm_gen.php` on the target machine.
 3. **Context Reduction**: Canonical patches use standard 3-line unified diff context. Range patches use 1-line context boundaries to prevent rejection from minor comment/whitespace shifts while preserving zero-fuzz integrity.
 4. **Scoping Decisions**: In PHP 5.5, range patches omit the `buf_value` header accumulation hunk in `main/rfc1867.c` (absent before 5.5.38). In PHP 7.4, a `guardabsent` variant introduces missing `ZSTR_MAX_OVERHEAD` and `ZSTR_MAX_LEN` macros for PHP 7.4.3–7.4.10.
