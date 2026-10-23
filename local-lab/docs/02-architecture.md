@@ -6,34 +6,10 @@ How the lab network is built, and why each decision was made the way it was.
 
 ## Topology
 
-```
-                         INTERNET
-                             │
-                             ✗  no path
-                             │
-  ┌──────────────────────────┴─────────────────────────────────┐
-  │  HOST                                                      │
-  │                                                            │
-  │   wlp2s0  33.33.33.84/27   default via 33.33.33.65        │
-  │      │                                                     │
-  │      │   (host keeps internet; used only for image pulls)  │
-  │      │                                                     │
-  │   ┌──┴──────────────────────────────────────────────┐      │
-  │   │  labbr0       10.77.77.1/24                     │      │
-  │   │  ipv4.nat     FALSE                             │      │
-  │   │  ipv6         none                              │      │
-  │   │  ACL lab-egress:                                │      │
-  │   │    1. egress allow -> 10.77.77.0/24             │      │
-  │   │    2. egress reject          (terminal)         │      │
-  │   │    3. ingress allow                             │      │
-  │   └──┬──────────────────────────────────────────────┘      │
-  │      │                                                     │
-  │      ├── akatsuki-lab            10.77.77.153              │
-  │      │     └── /mnt/reports  ───► /opt/lab-reports/akatsuki│
-  │      │                                                     │
-  │      └── 10 PHP targets          10.77.77.x                │
-  └────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="images/lab-topology.webp" alt="PHP2Shell Lab Architecture & Dual-Isolation Topology" width="100%" style="width: 100%; max-width: 100%; height: auto;">
+</p>
+<p align="center"><em>Figure 1: PHP2Shell Lab Dual-Isolation Network Topology (<a href="images/lab-topology.svg">View Vector SVG</a>)</em></p>
 
 ---
 

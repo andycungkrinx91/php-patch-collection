@@ -149,9 +149,14 @@ internet so the failure means containment rather than a broken uplink.
 <p align="center"><em>Figure 1: Universal Autopatch Autonomous Execution Flow (<a href="docs/images/autopatch-flow.svg">Vector SVG</a>)</em></p>
 
 <p align="center">
-  <img src="docs/images/pentest-flow.webp" alt="Verification & Pentest Flow" width="100%" style="width: 100%; max-width: 100%; height: auto;">
+  <img src="docs/images/lab-topology.webp" alt="Dual-Isolation Lab Network Topology" width="100%" style="width: 100%; max-width: 100%; height: auto;">
 </p>
-<p align="center"><em>Figure 2: Pentest and Cross-Target Verification Flow</em></p>
+<p align="center"><em>Figure 2: Dual-Isolation Lab Network Topology (<a href="docs/images/lab-topology.svg">Vector SVG</a>)</em></p>
+
+<p align="center">
+  <img src="docs/images/anbu-pentest-flow.webp" alt="ANBU Controlled Pentest Verification Lifecycle" width="100%" style="width: 100%; max-width: 100%; height: auto;">
+</p>
+<p align="center"><em>Figure 3: ANBU Controlled Pentest Verification Lifecycle (§10 & §8b) (<a href="docs/images/anbu-pentest-flow.svg">Vector SVG</a>)</em></p>
 
 Read `docs/04-oracle-finding.md` before interpreting any 502. It is the single
 most misread result this lab produces.
