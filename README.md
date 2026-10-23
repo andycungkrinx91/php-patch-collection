@@ -64,9 +64,19 @@ This repository provides **battle-tested, production-ready security mitigations*
 
 ### Core Engineering Capabilities
 
-<p align="center">
-  <img src="docs/images/core-capabilities.gif" alt="Core Engineering Capabilities" width="850" />
-</p>
+```text
+┌───────────────────────────────┬───────────────────────────────┐
+│  🛡️ Zero-Fuzz C-Source Diffs  │  ⚡ Instant SAPI Hardening    │
+│  Byte-for-byte pristine C     │  Drop-in INI configurations   │
+│  diffs enforcing --fuzz=0 to  │  and reverse-proxy filters    │
+│  prevent opcode misalignment. │  without C recompilation.     │
+├───────────────────────────────┼───────────────────────────────┤
+│  🔄 Atomic Lifecycle Tooling  │  🧪 Isolated E2E Verification │
+│  Automated shell drivers with │  Cross-distribution testbeds  │
+│  --preview, pre-change        │  validating runtime SAPI      │
+│  backups, and --rollback.     │  flags inside Docker/LXC.     │
+└───────────────────────────────┴───────────────────────────────┘
+```
 
 | Pillar | Mechanism | Operational Benefit |
 |---|---|---|
@@ -109,12 +119,35 @@ The mitigations address two coupled vulnerabilities:
 
 The collection enforces a multi-tier defense-in-depth model so teams can deploy immediate edge and runtime protections while scheduling off-host binary rebuilds:
 
-<p align="center">
-  <img src="docs/images/defense-in-depth-architecture.gif" alt="PHP Core Defense-in-Depth Mitigation Architecture" width="850" />
-</p>
-<p align="center">
-  <em>Figure 1: Tokubetsu-Jonin Animated Defense-in-Depth Mitigation Pipeline (Vector source: <a href="docs/images/defense-in-depth-architecture.svg">docs/images/defense-in-depth-architecture.svg</a>)</em>
-</p>
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      INCOMING HTTP/HTTPS TRAFFIC                        │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Layer 1: Edge Perimeter Protection (Nginx Filter)                       │
+│  • File: cve-2026-hardening.conf                                        │
+│  • Action: Blocks RFC1867 upload progress injection in request strings  │
+│  • Result: Immediate HTTP 400/403 drop before reaching FastCGI sockets  │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Layer 2: Runtime SAPI Configuration Hardening (PHP-FPM Drop-in)         │
+│  • File: 99-cve-2026-hardening.ini                                      │
+│  • Directives: session.upload_progress.enabled = Off                    │
+│  • Result: Neutralizes attack surface via daemon reload without C build │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Layer 3: Core Binary Source Mitigation (Zend Engine C-Patch)            │
+│  • Files: zend_alloc.c / session.c                                      │
+│  • Action: Bailout longjmp() bypass & fail-closed allocator hooks       │
+│  • Result: Eliminates cross-request heap reuse; enforced via --fuzz=0   │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
