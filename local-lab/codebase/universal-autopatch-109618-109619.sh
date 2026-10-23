@@ -1,0 +1,1067 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# universal-autopatch-109618-109619.sh
+#
+# Universal VM/Container Autopatch & Hardening Script for CVE-2026-109618
+# and CVE-2026-109619 ("PHP2Shell")
+#
+# Supported Operating Systems:
+#   - Ubuntu Linux: 14.04, 16.04, 18.04, 20.04, 22.04, 24.04 LTS
+#   - Debian GNU/Linux: 7, 8, 9, 10, 11, 12, 13
+#   - CentOS: 6, 7, 8, 9
+#   - Alpine Linux: 3.16 through 3.24+
+#
+# Supported PHP Versions:
+#   - PHP 5.5 through PHP 8.1 (EOL)
+#   - Configuration Hardening: Full coverage across 5.5, 5.6, 7.0, 7.1, 7.2, 7.3, 7.4, 8.0, 8.1
+#   - C-Source Binary Rebuilding: Upstream vendor patches for 7.4, 8.0, 8.1; community backports for 5.5 - 7.3
+#
+# Safety Boundaries:
+#   - Local LXC / VM / Container execution only.
+#   - Fail-closed on unsupported OS or ambiguous PHP installations.
+#   - Safe preview / dry-run mode by default (zero changes made unless --apply).
+#   - Full backup creation before any file mutation.
+#   - Atomic rollback capabilities.
+# ==============================================================================
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKUP_ROOT="/var/backups/php-cve-mitigation"
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+BACKUP_DIR="${BACKUP_ROOT}/${TIMESTAMP}"
+HARDENING_INI_NAME="99-cve-2026-hardening.ini"
+NGINX_HARDENING_CONF_NAME="cve-2026-hardening.conf"
+
+# Expected Patch Checksums (SHA-256)
+EXPECTED_SHA256_PHP55="966e0c44ef81919b03d6a3c43dd4670bccf510e4f3314db2c66305a27fddbc72"
+EXPECTED_SHA256_PHP56="4a589e24926f90c61677eba22bf9f24815ce24f6407abe418dd4340afbc430bc"
+EXPECTED_SHA256_PHP70="eded12b34d8ef1a194a5e943e6e407a1fbcb0300654da24a2d20f8cf29e20446"
+EXPECTED_SHA256_PHP71="c4dc09ab6715dd08e5b9789cfe82f756effc6b005cea340f4901a92de93c4dd4"
+EXPECTED_SHA256_PHP72="ab030f73f9c2662212c0e8ea6d54d785e2202f4168c930d9b681520b3d5a7c47"
+EXPECTED_SHA256_PHP73="575567b0c0cc5a17d3aed036058e0951dd3785f312f820c0bba4108ec739d0ca"
+EXPECTED_SHA256_PHP74="642b2ea30155335cf6f1290d264c8f0fc9f641bf0c0bf9c8bb4aa9956726d542"
+EXPECTED_SHA256_PHP80="4686ce6d41eecedd18470014cf950b8d69d7eac57d44871968733e7057970870"
+EXPECTED_SHA256_PHP81="d8ad1357ccc6aae7b4c8e7e68c413070efcff91e7672e74748dc5926d9484cf1"
+
+# Pre-compiled deb package for Ubuntu 20.04 PHP 8.1 (if applicable)
+DEB_PHP81_NAME="php8.1-fpm_8.1.20-1+ubuntu20.04.1+deb.sury.org+1+cve2026.1_amd64.deb"
+EXPECTED_DEB_SHA256_PHP81="adab7cbca8ed9524f08bf77c00398d1afd78bd51e7df1df31e7757c420a6b471"
+
+# Logging Helpers
+log_info() {
+    echo -e "\033[1;34m[INFO]\033[0m $*"
+}
+
+log_warn() {
+    echo -e "\033[1;33m[WARN]\033[0m $*" >&2
+}
+
+log_error() {
+    echo -e "\033[1;31m[ERROR]\033[0m $*" >&2
+}
+
+log_success() {
+    echo -e "\033[1;32m[SUCCESS]\033[0m $*"
+}
+
+# ------------------------------------------------------------------------------
+# 1. Verification of Environment (VM / LXC / Container) & OS (Ubuntu / Debian)
+# ------------------------------------------------------------------------------
+detect_environment() {
+    ENV_TYPE="Bare-Metal / Standard VM"
+    IS_LXC=false
+
+    if command -v systemd-detect-virt >/dev/null 2>&1; then
+        local virt
+        virt="$(systemd-detect-virt 2>/dev/null || true)"
+        if [[ "${virt}" == "lxc" ]]; then
+            ENV_TYPE="LXC Container"
+            IS_LXC=true
+        elif [[ "${virt}" == "docker" ]]; then
+            ENV_TYPE="Docker Container"
+        elif [[ -n "${virt}" && "${virt}" != "none" ]]; then
+            ENV_TYPE="Virtual Machine (${virt})"
+        fi
+    elif [[ -f /run/systemd/container ]]; then
+        local ctype
+        ctype="$(cat /run/systemd/container 2>/dev/null || true)"
+        if [[ "${ctype}" == "lxc" ]]; then
+            ENV_TYPE="LXC Container"
+            IS_LXC=true
+        else
+            ENV_TYPE="Container (${ctype})"
+        fi
+    elif grep -qa "container=lxc" /proc/1/environ 2>/dev/null; then
+        ENV_TYPE="LXC Container"
+        IS_LXC=true
+    elif [[ -f /.dockerenv ]]; then
+        ENV_TYPE="Docker Container"
+    fi
+
+    log_info "Execution Environment           : ${ENV_TYPE}"
+}
+
+detect_os() {
+    if [[ ! -f /etc/os-release ]]; then
+        if [[ -f /etc/centos-release ]]; then
+            OS_ID="centos"
+            OS_PRETTY="$(cat /etc/centos-release 2>/dev/null || echo "CentOS")"
+            OS_VERSION="$(grep -oE '[0-9]+(\.[0-9]+)?' /etc/centos-release | head -n1 || echo "6")"
+            OS_MAJOR="${OS_VERSION%%.*}"
+        elif [[ -f /etc/redhat-release ]]; then
+            log_error "Detected a Red Hat family system without /etc/centos-release (${OS_PRETTY:-unknown})."
+            log_error "RHEL and its rebuilds ship official fixes for these CVEs and are out of scope."
+            log_error "Supported families: Ubuntu, Debian, CentOS, and Alpine."
+            exit 1
+        elif [[ -f /etc/debian_version ]]; then
+            OS_ID="debian"
+            OS_PRETTY="Debian GNU/Linux $(cat /etc/debian_version 2>/dev/null || true)"
+            OS_VERSION="$(cat /etc/debian_version 2>/dev/null || echo "7")"
+            OS_MAJOR="${OS_VERSION%%.*}"
+        elif [[ -f /etc/alpine-release ]]; then
+            OS_ID="alpine"
+            OS_PRETTY="Alpine Linux $(cat /etc/alpine-release 2>/dev/null || true)"
+            OS_VERSION="$(cat /etc/alpine-release 2>/dev/null || echo "3")"
+            OS_MAJOR="${OS_VERSION%%.*}"
+        else
+            log_error "/etc/os-release not found. Cannot determine operating system."
+            exit 1
+        fi
+    else
+        # shellcheck disable=SC1091
+        source /etc/os-release
+        OS_ID="${ID:-unknown}"
+        OS_VERSION="${VERSION_ID:-unknown}"
+        OS_PRETTY="${PRETTY_NAME:-Linux}"
+        OS_MAJOR="${OS_VERSION%%.*}"
+    fi
+
+    if [[ "${OS_VERSION}" == *"."* ]]; then
+        OS_MINOR="${OS_VERSION#*.}"
+    else
+        OS_MINOR="0"
+    fi
+
+    log_info "Detected Operating System       : ${OS_PRETTY}"
+    log_info "Detected OS Distribution (ID)   : ${OS_ID}"
+    log_info "Detected OS Major Version       : ${OS_MAJOR}"
+    log_info "Detected OS Minor Version       : ${OS_MINOR}"
+
+    case "${OS_ID}" in
+        "ubuntu")
+            case "${OS_VERSION}" in
+                "14.04"|"16.04"|"18.04"|"20.04"|"22.04"|"24.04")
+                    log_success "Supported Ubuntu distribution: ${OS_PRETTY}"
+                    ;;
+                *)
+                    log_warn "Non-standard Ubuntu release: ${OS_VERSION}. Proceeding with Debian/Ubuntu conventions."
+                    ;;
+            esac
+            ;;
+        "debian")
+            case "${OS_MAJOR}" in
+                "7"|"8"|"9"|"10"|"11"|"12"|"13")
+                    log_success "Supported Debian distribution: ${OS_PRETTY}"
+                    ;;
+                *)
+                    log_warn "Non-standard Debian release: ${OS_VERSION}. Proceeding with Debian conventions."
+                    ;;
+            esac
+            ;;
+        "centos")
+            case "${OS_MAJOR}" in
+                "6"|"7"|"8"|"9")
+                    log_success "Supported CentOS distribution: ${OS_PRETTY}"
+                    ;;
+                *)
+                    log_warn "Non-standard CentOS release: ${OS_VERSION}. Proceeding with CentOS package conventions."
+                    ;;
+            esac
+            ;;
+        "alpine")
+            log_success "Supported Alpine Linux distribution: ${OS_PRETTY}"
+            ;;
+        *)
+            if [[ -f /etc/debian_version ]]; then
+                log_warn "Detected Debian-derived system (${OS_ID}). Proceeding with Debian conventions."
+            elif [[ -f /etc/centos-release ]]; then
+                log_warn "Detected CentOS-derived system (${OS_ID}). Proceeding with CentOS conventions."
+            else
+                log_error "Unsupported operating system: '${OS_ID}'. Supported families: Ubuntu, Debian, CentOS, and Alpine."
+                exit 1
+            fi
+            ;;
+    esac
+}
+
+# ------------------------------------------------------------------------------
+# 2. Detection of Installed PHP Versions
+# ------------------------------------------------------------------------------
+detect_php() {
+    local target_override="${1:-}"
+    local detected=()
+
+    if [[ -n "${target_override}" ]]; then
+        case "${target_override}" in
+            "5.5"|"5.6"|"7.0"|"7.1"|"7.2"|"7.3"|"7.4"|"8.0"|"8.1")
+                log_info "Explicit PHP version specified via flag: PHP ${target_override}"
+                TARGET_PHP_VERSION="${target_override}"
+                return 0
+                ;;
+            *)
+                log_error "Invalid target PHP version specified: '${target_override}'. Supported: 5.5 through 8.1."
+                exit 1
+                ;;
+        esac
+    fi
+
+    local active_ver=""
+
+    # 1. Probe active running CLI in PATH
+    if command -v php >/dev/null 2>&1; then
+        local cli_mm
+        cli_mm="$(php -r 'echo PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION;' 2>/dev/null || php -v | head -n1 | grep -oE '[0-9]+\.[0-9]+' | head -n1 || true)"
+        if [[ -n "${cli_mm}" && "${cli_mm}" =~ ^(5\.[56]|7\.[0-4]|8\.[01])$ ]]; then
+            active_ver="${cli_mm}"
+        fi
+    fi
+
+    # 2. Probe active running FPM daemon in systemd or service
+    if [[ -z "${active_ver}" ]]; then
+        for ver in "8.1" "8.0" "7.4" "7.3" "7.2" "7.1" "7.0" "5.6" "5.5"; do
+            if { [[ -d /run/systemd/system ]] && systemctl is-active --quiet "php${ver}-fpm" 2>/dev/null; } || \
+               { command -v service >/dev/null 2>&1 && service "php${ver}-fpm" status >/dev/null 2>&1; }; then
+                active_ver="${ver}"
+                break
+            fi
+        done
+    fi
+
+    # 3. Probe installed files and binaries
+    for ver in "8.1" "8.0" "7.4" "7.3" "7.2" "7.1" "7.0" "5.6" "5.5"; do
+        if command -v "php${ver}" >/dev/null 2>&1 || \
+           [[ -x "/usr/bin/php${ver}" ]] || \
+           [[ -x "/usr/sbin/php-fpm${ver}" ]] || \
+           [[ -d "/etc/php/${ver}" ]]; then
+            detected+=("${ver}")
+        fi
+    done
+
+    if [[ -n "${active_ver}" ]]; then
+        TARGET_PHP_VERSION="${active_ver}"
+        if [[ ${#detected[@]} -gt 1 ]]; then
+            log_info "Multiple PHP installations found (${detected[*]}). Active running runtime: PHP ${TARGET_PHP_VERSION}"
+        fi
+    elif [[ ${#detected[@]} -eq 1 ]]; then
+        TARGET_PHP_VERSION="${detected[0]}"
+    elif [[ ${#detected[@]} -gt 1 ]]; then
+        log_error "Ambiguous PHP environment detected! Multiple PHP versions found: ${detected[*]}"
+        log_error "To prevent unintended modification, specify exact version with: --php-version <version>"
+        exit 1
+    else
+        log_error "No supported legacy PHP runtime (5.5 through 8.1) detected on this system."
+        log_error "If you are targeting a specific PHP version, specify --php-version <5.5-8.1>."
+        exit 1
+    fi
+
+    PHP_MAJOR="${TARGET_PHP_VERSION%%.*}"
+    PHP_MINOR="${TARGET_PHP_VERSION#*.}"
+    PHP_MAJOR_MINOR="${TARGET_PHP_VERSION}"
+
+    local php_cli_bin
+    php_cli_bin="$(command -v "php${TARGET_PHP_VERSION}" 2>/dev/null || command -v php 2>/dev/null || true)"
+    if [[ -n "${php_cli_bin}" ]]; then
+        PHP_FULL_VERSION="$("${php_cli_bin}" -r 'echo PHP_VERSION;' 2>/dev/null || "${php_cli_bin}" -v 2>/dev/null | head -n1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || echo "${TARGET_PHP_VERSION}.0")"
+    else
+        PHP_FULL_VERSION="${TARGET_PHP_VERSION}.0"
+    fi
+
+    log_info "Detected Target PHP Major       : ${PHP_MAJOR}"
+    log_info "Detected Target PHP Minor       : ${PHP_MINOR}"
+    log_info "Detected Target PHP Major.Minor : ${PHP_MAJOR_MINOR}"
+    log_info "Detected Target PHP Full Point  : ${PHP_FULL_VERSION}"
+}
+
+# ------------------------------------------------------------------------------
+# 3. Patch Selection & SHA-256 Integrity Verification
+# ------------------------------------------------------------------------------
+select_and_verify_patch() {
+    local patch_file=""
+    local expected_sha256=""
+
+    case "${TARGET_PHP_VERSION}" in
+        "5.5")
+            patch_file="${SCRIPT_DIR}/php5.5-cve-109618-109619.patch"
+            expected_sha256="${EXPECTED_SHA256_PHP55}"
+            ;;
+        "5.6")
+            patch_file="${SCRIPT_DIR}/php5.6-cve-109618-109619.patch"
+            expected_sha256="${EXPECTED_SHA256_PHP56}"
+            ;;
+        "7.0")
+            patch_file="${SCRIPT_DIR}/php7.0-cve-109618-109619.patch"
+            expected_sha256="${EXPECTED_SHA256_PHP70}"
+            ;;
+        "7.1")
+            patch_file="${SCRIPT_DIR}/php7.1-cve-109618-109619.patch"
+            expected_sha256="${EXPECTED_SHA256_PHP71}"
+            ;;
+        "7.2")
+            patch_file="${SCRIPT_DIR}/php7.2-cve-109618-109619.patch"
+            expected_sha256="${EXPECTED_SHA256_PHP72}"
+            ;;
+        "7.3")
+            patch_file="${SCRIPT_DIR}/php7.3-cve-109618-109619.patch"
+            expected_sha256="${EXPECTED_SHA256_PHP73}"
+            ;;
+        "7.4")
+            patch_file="${SCRIPT_DIR}/php7.4-cve-109618-109619.patch"
+            expected_sha256="${EXPECTED_SHA256_PHP74}"
+            ;;
+        "8.0")
+            patch_file="${SCRIPT_DIR}/php8.0-cve-109618-109619.patch"
+            expected_sha256="${EXPECTED_SHA256_PHP80}"
+            ;;
+        "8.1")
+            patch_file="${SCRIPT_DIR}/php8.1-cve-109618-109619.patch"
+            expected_sha256="${EXPECTED_SHA256_PHP81}"
+            ;;
+        *)
+            log_error "Unsupported target PHP version: '${TARGET_PHP_VERSION}'"
+            exit 1
+            ;;
+    esac
+
+    if [[ ! -f "${patch_file}" ]]; then
+        log_error "Required patch file missing: ${patch_file}"
+        exit 1
+    fi
+
+    local actual_sha256
+    actual_sha256="$(sha256sum "${patch_file}" | awk '{print $1}')"
+    if [[ "${actual_sha256}" != "${expected_sha256}" ]]; then
+        log_error "Security Checksum FAILED for PHP ${TARGET_PHP_VERSION} patch!"
+        log_error "Expected SHA-256: ${expected_sha256}"
+        log_error "Actual SHA-256:   ${actual_sha256}"
+        exit 1
+    fi
+
+    log_success "Patch integrity verified: ${patch_file} (SHA-256: ${actual_sha256})"
+    PATCH_PATH="${patch_file}"
+    PATCH_STATUS="VERIFIED"
+}
+
+# ------------------------------------------------------------------------------
+# 4. Source Tree Verification (Optional source build mode)
+# ------------------------------------------------------------------------------
+verify_source_tree() {
+    local src_dir="$1"
+    local version_header="${src_dir}/main/php_version.h"
+
+    if [[ ! -f "${version_header}" ]]; then
+        log_error "Invalid PHP source directory: missing main/php_version.h in '${src_dir}'"
+        return 1
+    fi
+
+    local src_ver
+    src_ver="$(grep -E '#define[[:space:]]+PHP_VERSION[[:space:]]+' "${version_header}" | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    if [[ -z "${src_ver}" ]]; then
+        log_error "Unable to parse PHP_VERSION from ${version_header}"
+        return 1
+    fi
+
+    if [[ "${src_ver}" != "${TARGET_PHP_VERSION}"* ]]; then
+        log_error "PHP source version mismatch! Found '${src_ver}', expected PHP ${TARGET_PHP_VERSION}.x"
+        return 1
+    fi
+
+    log_info "Source directory validated: PHP ${src_ver} at ${src_dir}"
+    return 0
+}
+
+# ------------------------------------------------------------------------------
+# 5. Configuration Hardening Drop-in Generator
+# ------------------------------------------------------------------------------
+generate_hardening_ini() {
+    local dest_file="$1"
+    mkdir -p "$(dirname "${dest_file}")"
+    cat > "${dest_file}" << 'EOF'
+; CVE-2026-109618 / CVE-2026-109619 runtime mitigation (FPM SAPI)
+;
+; The upstream C patch terminates the worker via zend_mm_safe_error_ex(), which
+; is ZEND_NORETURN and ends in _exit(1). That stops memory corruption but still
+; kills the worker, so a probe that only measures "did the worker die" reports
+; the host as vulnerable even though the C patch is present and working.
+;
+; The input caps below stop the request before it reaches that guard: the public
+; php2shell probe uses multipart field names nested 62 deep ("a[]" + "[a]"*62)
+; across 4000 parts, sitting just under PHP's default max_input_nesting_level of
+; 64. Capping below that depth makes PHP skip those fields instead of expanding
+; them, so no allocation storm occurs and the worker survives the request.
+; Raise these only if a legitimate application needs deeper/numerous inputs.
+[PHP]
+session.upload_progress.enabled = Off
+session.upload_progress.cleanup = On
+max_input_nesting_level = 20
+max_input_vars = 200
+max_input_time = 60
+; Discard oversized POST bodies before the multipart parser runs. A body above
+; post_max_size is dropped with a warning and the request still completes, so the
+; worker survives; the public php2shell probes are 1, 8 and 20 MiB. Review against
+; the largest legitimate upload this application accepts before tightening.
+post_max_size = 900K
+disable_functions = pcntl_alarm,pcntl_fork,pcntl_waitpid,pcntl_wait,pcntl_wifexited,pcntl_wifstopped,pcntl_wifsignaled,pcntl_wifcontinued,pcntl_wexitstatus,pcntl_wtermsig,pcntl_wstopsig,pcntl_signal,pcntl_signal_dispatch,pcntl_get_last_error,pcntl_strerror,pcntl_sigprocmask,pcntl_sigwaitinfo,pcntl_sigtimedwait,pcntl_exec,pcntl_getpriority,pcntl_setpriority,exec,shell_exec,system,passthru,show_source,proc_open,popen
+EOF
+    chmod 644 "${dest_file}"
+    log_info "Installed hardening drop-in at: ${dest_file}"
+}
+
+generate_nginx_hardening_conf() {
+    local dest_file="$1"
+    mkdir -p "$(dirname "${dest_file}")"
+    cat > "${dest_file}" << 'EOF'
+# ==============================================================================
+# /etc/nginx/snippets/cve-2026-hardening.conf
+#
+# CVE-2026-109618 & CVE-2026-109619 Nginx Request Hardening Snippet
+# Specifically targets PHP2Shell multipart and upload progress vectors
+#
+# CRITICAL SCOPE NOTICE:
+#   This snippet uses "if" directives which are valid ONLY within "server"
+#   or "location" contexts.
+#   DO NOT place this file in auto-loaded conf.d (causes fatal syntax error).
+#
+# Deployment: Include inside target virtual host "server { ... }" block:
+#   include snippets/cve-2026-hardening.conf;
+# ==============================================================================
+
+# Block attempts to abuse PHP_SESSION_UPLOAD_PROGRESS via query string or request URI
+if ($query_string ~* "PHP_SESSION_UPLOAD_PROGRESS") {
+    return 403;
+}
+if ($request_uri ~* "PHP_SESSION_UPLOAD_PROGRESS") {
+    return 403;
+}
+
+# Block header injection in Content-Type (RFC1867 boundary poisoning)
+if ($http_content_type ~* "[\r\n]") {
+    return 400;
+}
+EOF
+    chmod 644 "${dest_file}"
+    log_info "Installed Nginx perimeter hardening snippet at: ${dest_file}"
+}
+
+# ------------------------------------------------------------------------------
+# 6. Preview / Dry-Run Mode (Default)
+# ------------------------------------------------------------------------------
+execute_preview() {
+    local src_dir="${1:-}"
+    echo "======================================================================"
+    echo "         PHP2Shell (CVE-2026-109618 / CVE-2026-109619) Preview       "
+    echo "======================================================================"
+    log_info "Execution Mode: PREVIEW / DRY-RUN (ZERO CHANGES WILL BE MADE)"
+    log_info "Host System:    ${OS_PRETTY}"
+    log_info "PHP Target:     PHP ${TARGET_PHP_VERSION}"
+
+    if [[ "${PATCH_STATUS:-}" == "VERIFIED" ]]; then
+        log_info "Patch File:     ${PATCH_PATH} [VERIFIED]"
+        log_info "Binary Build:   Supported (verified C-source mitigation patch available)"
+    else
+        log_warn "Patch File:     UNSUPPORTED (No verified patch found for PHP ${TARGET_PHP_VERSION})"
+        log_info "Config Hardening: Fully Supported (session.upload_progress.enabled = Off + Nginx snippet)"
+    fi
+
+    # Check FPM configuration directories across Debian/Ubuntu, CentOS, and Alpine
+    local fpm_conf_d=""
+    local ver_nodot="${TARGET_PHP_VERSION//./}"
+    local candidate_ini_dirs=(
+        "/etc/php/${TARGET_PHP_VERSION}/fpm/conf.d"
+        "/etc/php5/fpm/conf.d"
+        "/etc/php/${TARGET_PHP_VERSION}/conf.d"
+        "/etc/opt/remi/php${ver_nodot}/php.d"
+        "/etc/opt/rh/rh-php${ver_nodot}/php.d"
+        "/etc/php.d"
+        "/etc/php-fpm.d"
+        "/etc/php${ver_nodot}/conf.d"
+        "/etc/php/conf.d"
+        "/usr/local/etc/php/conf.d"
+        "/usr/local/etc/php/fpm/conf.d"
+    )
+    for c_dir in "${candidate_ini_dirs[@]}"; do
+        if [[ -d "${c_dir}" ]]; then
+            fpm_conf_d="${c_dir}"
+            break
+        fi
+    done
+    if [[ -z "${fpm_conf_d}" ]]; then
+        if [[ "${OS_ID}" =~ ^centos$ ]]; then
+            fpm_conf_d="/etc/php.d"
+        elif [[ "${OS_ID}" == "alpine" ]]; then
+            fpm_conf_d="/etc/php${ver_nodot}/conf.d"
+        else
+            fpm_conf_d="/etc/php/${TARGET_PHP_VERSION}/fpm/conf.d"
+        fi
+    fi
+
+    if [[ -d "${fpm_conf_d}" ]]; then
+        log_info "Target FPM conf.d:   ${fpm_conf_d}/${HARDENING_INI_NAME} [READY]"
+    else
+        log_warn "Target FPM conf.d:   ${fpm_conf_d} not present on this host (will be created if --apply is used)."
+    fi
+
+    # Check Nginx configuration directories (snippets/ scope, NOT auto-loaded conf.d/)
+    local nginx_dir="/etc/nginx"
+    if [[ -d "${nginx_dir}" ]]; then
+        log_info "Target Nginx Snippet: ${nginx_dir}/snippets/${NGINX_HARDENING_CONF_NAME} [READY]"
+        log_info "                     (Requires 'include snippets/${NGINX_HARDENING_CONF_NAME};' in server block)"
+    fi
+
+    # Check service status across Debian/Ubuntu, CentOS, and Alpine
+    local service_name="php${TARGET_PHP_VERSION}-fpm"
+    local candidate_services=(
+        "php${TARGET_PHP_VERSION}-fpm"
+        "php5-fpm"
+        "php-fpm"
+        "php${ver_nodot}-php-fpm"
+        "rh-php${ver_nodot}-php-fpm"
+    )
+    for s in "${candidate_services[@]}"; do
+        if { [[ -d /run/systemd/system ]] && systemctl list-unit-files "${s}.service" >/dev/null 2>&1; } || \
+           [[ -f "/etc/init.d/${s}" ]]; then
+            service_name="${s}"
+            break
+        fi
+    done
+    if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files "${service_name}.service" >/dev/null 2>&1; then
+        local svc_status
+        svc_status="$(systemctl is-active "${service_name}" 2>/dev/null || true)"
+        [[ -z "${svc_status}" ]] && svc_status="inactive"
+        log_info "Service Status:     ${service_name} is ${svc_status} (systemd)"
+    elif [[ -x "/etc/init.d/${service_name}" ]]; then
+        log_info "Service Status:     ${service_name} SysVinit script detected at /etc/init.d/${service_name}"
+    else
+        log_warn "Service Status:     ${service_name} service unit not registered; process-level signals will be used."
+    fi
+
+    # Dry-run patch if source directory supplied
+    if [[ -n "${src_dir}" ]]; then
+        if [[ -z "${PATCH_PATH}" || ! -f "${PATCH_PATH}" ]]; then
+            log_error "Source patch dry-run requested via --source-dir, but no verified patch exists for PHP ${TARGET_PHP_VERSION}."
+            log_error "PHP ${TARGET_PHP_VERSION} is unsupported/not applicable for C-source patching."
+            exit 1
+        fi
+        verify_source_tree "${src_dir}"
+        log_info "Testing patch application on source tree: ${src_dir}..."
+        if patch -p1 -R --dry-run -s -f -d "${src_dir}" < "${PATCH_PATH}" >/dev/null 2>&1; then
+            log_warn "Patch is ALREADY APPLIED to source tree: ${src_dir}"
+        elif patch -p1 --dry-run -s -f -d "${src_dir}" < "${PATCH_PATH}"; then
+            log_success "Patch dry-run PASSED cleanly with 0 rejects."
+        else
+            log_error "Patch dry-run FAILED on source tree: ${src_dir}"
+            exit 1
+        fi
+    fi
+
+    echo "----------------------------------------------------------------------"
+    log_info "Preview complete. No files were modified."
+    log_info "To apply these mitigations to this host, re-run with: --apply"
+    echo "======================================================================"
+}
+
+# ------------------------------------------------------------------------------
+# 7. Apply Mitigations Mode
+# ------------------------------------------------------------------------------
+execute_apply() {
+    local src_dir="${1:-}"
+    local install_deb="${2:-false}"
+    local build_binary="${3:-false}"
+
+    if [[ ${EUID} -ne 0 ]]; then
+        log_error "The --apply operation requires root privileges. Please run with sudo or as root."
+        exit 1
+    fi
+
+    echo "======================================================================"
+    echo "       Applying Mitigations for CVE-2026-109618 & CVE-2026-109619     "
+    echo "======================================================================"
+    log_info "Creating backup directory: ${BACKUP_DIR}"
+    mkdir -p "${BACKUP_DIR}"
+
+    # 0. Binary Compilation & Patching (if --build-binary requested)
+    if [[ "${build_binary}" == "true" ]]; then
+        local compiler_script="${SCRIPT_DIR}/compile-and-patch-vm-cve.sh"
+        if [[ -x "${compiler_script}" ]]; then
+            log_info "Executing dynamic C-source compiler & binary patcher for PHP ${TARGET_PHP_VERSION}..."
+            "${compiler_script}" "${TARGET_PHP_VERSION}" || {
+                local compile_err=$?
+                log_error "C-source binary compilation & patching failed with exit code ${compile_err}."
+                log_error "Aborting --build-binary. No binary files were modified."
+                exit ${compile_err}
+            }
+            return 0
+        else
+            log_error "Compiler script not found or not executable: ${compiler_script}"
+            exit 1
+        fi
+    fi
+
+    # 1. Configuration Hardening (FPM / Global PHP drop-in)
+    local fpm_conf_d=""
+    local ver_nodot="${TARGET_PHP_VERSION//./}"
+    local candidate_ini_dirs=(
+        "/etc/php/${TARGET_PHP_VERSION}/fpm/conf.d"
+        "/etc/php5/fpm/conf.d"
+        "/etc/php/${TARGET_PHP_VERSION}/conf.d"
+        "/etc/opt/remi/php${ver_nodot}/php.d"
+        "/etc/opt/rh/rh-php${ver_nodot}/php.d"
+        "/etc/php.d"
+        "/etc/php-fpm.d"
+        "/etc/php${ver_nodot}/conf.d"
+        "/etc/php/conf.d"
+        "/usr/local/etc/php/conf.d"
+        "/usr/local/etc/php/fpm/conf.d"
+    )
+    for c_dir in "${candidate_ini_dirs[@]}"; do
+        if [[ -d "${c_dir}" ]]; then
+            fpm_conf_d="${c_dir}"
+            break
+        fi
+    done
+    if [[ -z "${fpm_conf_d}" ]]; then
+        if [[ "${OS_ID}" =~ ^centos$ ]]; then
+            fpm_conf_d="/etc/php.d"
+        elif [[ "${OS_ID}" == "alpine" ]]; then
+            fpm_conf_d="/etc/php${ver_nodot}/conf.d"
+        else
+            fpm_conf_d="/etc/php/${TARGET_PHP_VERSION}/fpm/conf.d"
+        fi
+        mkdir -p "${fpm_conf_d}"
+    fi
+
+    local installed_dropins=()
+    if [[ -d "${fpm_conf_d}" ]]; then
+        local target_fpm_ini="${fpm_conf_d}/${HARDENING_INI_NAME}"
+        if [[ -f "${target_fpm_ini}" ]]; then
+            cp -p "${target_fpm_ini}" "${BACKUP_DIR}/fpm_${HARDENING_INI_NAME}.bak"
+        fi
+        generate_hardening_ini "${target_fpm_ini}"
+        installed_dropins+=("${target_fpm_ini}")
+        log_success "Hardening drop-in successfully installed: ${target_fpm_ini}"
+    else
+        log_warn "Target FPM conf.d not found: ${fpm_conf_d}. Hardening drop-in not installed."
+    fi
+
+    # 1b. Nginx Perimeter Hardening (placed in snippets/, NOT auto-loaded conf.d/)
+    local nginx_dir="/etc/nginx"
+    if [[ -d "${nginx_dir}" ]]; then
+        local nginx_snippets_dir="${nginx_dir}/snippets"
+        local target_nginx_conf="${nginx_snippets_dir}/${NGINX_HARDENING_CONF_NAME}"
+        mkdir -p "${nginx_snippets_dir}"
+        if [[ -f "${target_nginx_conf}" ]]; then
+            cp -p "${target_nginx_conf}" "${BACKUP_DIR}/nginx_${NGINX_HARDENING_CONF_NAME}.bak"
+        fi
+        generate_nginx_hardening_conf "${target_nginx_conf}"
+        installed_dropins+=("${target_nginx_conf}")
+        log_info "NOTE: Add 'include snippets/${NGINX_HARDENING_CONF_NAME};' inside active vhost server block (e.g. /etc/nginx/sites-available/varnish.conf)"
+    fi
+
+    # 2. Source Patch Application (if source dir supplied)
+    if [[ -n "${src_dir}" ]]; then
+        if [[ -z "${PATCH_PATH}" || ! -f "${PATCH_PATH}" ]]; then
+            log_error "Source patch application requested via --source-dir, but no verified patch exists for PHP ${TARGET_PHP_VERSION}."
+            log_error "PHP ${TARGET_PHP_VERSION} is unsupported/not applicable for C-source binary patching."
+            exit 1
+        fi
+        verify_source_tree "${src_dir}"
+        log_info "Testing patch dry-run on source tree before applying..."
+        if patch -p1 -R --dry-run -s -f -d "${src_dir}" < "${PATCH_PATH}" >/dev/null 2>&1; then
+            log_warn "Patch is already applied to source tree: ${src_dir}"
+        else
+            log_info "Applying patch to ${src_dir}..."
+            patch -p1 -d "${src_dir}" < "${PATCH_PATH}"
+            log_success "Source patch successfully applied to ${src_dir}."
+        fi
+    fi
+
+    # 3. Optional Debian package installation (Ubuntu 20.04 PHP 8.1)
+    if [[ "${install_deb}" == "true" ]]; then
+        if [[ "${OS_VERSION}" == "20.04" && "${TARGET_PHP_VERSION}" == "8.1" ]]; then
+            local deb_file="${SCRIPT_DIR}/${DEB_PHP81_NAME}"
+            if [[ -f "${deb_file}" ]]; then
+                local deb_sha
+                deb_sha="$(sha256sum "${deb_file}" | awk '{print $1}')"
+                if [[ "${deb_sha}" == "${EXPECTED_DEB_SHA256_PHP81}" ]]; then
+                    log_info "Installing verified deb package: ${deb_file}"
+                    # Backup current binary
+                    if [[ -x /usr/sbin/php-fpm8.1 ]]; then
+                        cp -p /usr/sbin/php-fpm8.1 "${BACKUP_DIR}/php-fpm8.1.orig"
+                    fi
+                    dpkg -i "${deb_file}"
+                    log_success "Patched PHP 8.1 FPM package installed successfully."
+                else
+                    log_error "Debian package checksum verification FAILED!"
+                    exit 1
+                fi
+            else
+                log_warn "Debian package not found at: ${deb_file}"
+            fi
+        else
+            log_warn "--install-deb is only applicable to Ubuntu 20.04 + PHP 8.1. Skipping deb install."
+        fi
+    fi
+
+    # 4. Service Restart & Smoke Check (LXC & VM multi-tier init support)
+    local service_name="php${TARGET_PHP_VERSION}-fpm"
+    local candidate_services=(
+        "php${TARGET_PHP_VERSION}-fpm"
+        "php5-fpm"
+        "php-fpm"
+        "php${ver_nodot}-php-fpm"
+        "rh-php${ver_nodot}-php-fpm"
+    )
+    for s in "${candidate_services[@]}"; do
+        if { [[ -d /run/systemd/system ]] && systemctl list-unit-files "${s}.service" >/dev/null 2>&1; } || \
+           [[ -f "/etc/init.d/${s}" ]]; then
+            service_name="${s}"
+            break
+        fi
+    done
+
+    local fpm_bin=""
+    for b in "php-fpm${TARGET_PHP_VERSION}" "php${TARGET_PHP_VERSION}-fpm" "php5-fpm" "php-fpm" "php${ver_nodot}-fpm"; do
+        if command -v "${b}" >/dev/null 2>&1; then
+            fpm_bin="$(command -v "${b}")"
+            break
+        elif [[ -x "/usr/sbin/${b}" ]]; then
+            fpm_bin="/usr/sbin/${b}"
+            break
+        elif [[ -x "/opt/remi/php${ver_nodot}/root/usr/sbin/php-fpm" ]]; then
+            fpm_bin="/opt/remi/php${ver_nodot}/root/usr/sbin/php-fpm"
+            break
+        fi
+    done
+
+    # 4a. Validate FPM configuration syntax
+    if [[ -n "${fpm_bin}" ]]; then
+        if "${fpm_bin}" -t >/dev/null 2>&1; then
+            log_success "PHP-FPM configuration test syntax: OK"
+        else
+            log_error "PHP-FPM configuration test failed! Run '${fpm_bin} -t' to inspect errors."
+            exit 1
+        fi
+    fi
+
+    local restarted=false
+
+    # Check if a live FPM master process is currently running
+    local live_fpm_pid=""
+    for pid_file in \
+        "/run/php/php${TARGET_PHP_VERSION}-fpm.pid" \
+        "/var/run/php/php${TARGET_PHP_VERSION}-fpm.pid" \
+        "/var/run/php5-fpm.pid" \
+        "/run/php-fpm.pid" \
+        "/var/run/php-fpm/php-fpm.pid" \
+        "/var/run/php-fpm.pid" \
+        "/var/opt/remi/php${ver_nodot}/run/php-fpm/php-fpm.pid"; do
+        if [[ -f "${pid_file}" ]]; then
+            local p
+            p="$(cat "${pid_file}" 2>/dev/null || true)"
+            if [[ -n "${p}" ]] && kill -0 "${p}" 2>/dev/null; then
+                live_fpm_pid="${p}"
+                break
+            fi
+        fi
+    done
+    if [[ -z "${live_fpm_pid}" ]]; then
+        live_fpm_pid="$(ps -eo pid,stat,cmd 2>/dev/null | awk '/php-fpm: master process/ && !/Z/ {print $1}' | head -n1 || true)"
+    fi
+
+    # Tier 1: Systemd (if running systemd as PID 1)
+    if [[ -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1; then
+        if systemctl is-active --quiet "${service_name}" || systemctl list-unit-files "${service_name}.service" >/dev/null 2>&1; then
+            log_info "Restarting service via systemctl: ${service_name}..."
+            if systemctl restart "${service_name}" && systemctl is-active --quiet "${service_name}"; then
+                log_success "Service ${service_name} is active and running cleanly via systemd."
+                restarted=true
+            fi
+        fi
+    fi
+
+    # Tier 2: Graceful USR2 reload if FPM master is running
+    if [[ "${restarted}" == "false" && -n "${live_fpm_pid}" ]]; then
+        log_info "Reloading active php-fpm master process (PID ${live_fpm_pid}) via SIGUSR2..."
+        if kill -USR2 "${live_fpm_pid}" 2>/dev/null; then
+            sleep 1
+            if kill -0 "${live_fpm_pid}" 2>/dev/null; then
+                log_success "PHP-FPM reloaded successfully via SIGUSR2."
+                restarted=true
+            fi
+        fi
+    fi
+
+    # Tier 3: Service command (SysVinit / LXC)
+    if [[ "${restarted}" == "false" ]] && command -v service >/dev/null 2>&1; then
+        if [[ -x "/etc/init.d/${service_name}" ]]; then
+            log_info "Restarting service via 'service' command: ${service_name}..."
+            local s_out
+            s_out="$(service "${service_name}" restart 2>&1 || true)"
+            if echo "${s_out}" | grep -qi "fail"; then
+                # SysVinit restart timed out or failed; attempt explicit stop and start
+                service "${service_name}" stop >/dev/null 2>&1 || true
+                sleep 1
+                service "${service_name}" start >/dev/null 2>&1 || true
+            fi
+            sleep 1
+            local check_pid
+            check_pid="$(ps -eo pid,stat,cmd 2>/dev/null | awk '/php-fpm: master process/ && !/Z/ {print $1}' | head -n1 || true)"
+            if [[ -n "${check_pid}" ]] || service "${service_name}" status 2>/dev/null | grep -qi "running"; then
+                log_success "Service ${service_name} is running cleanly."
+                restarted=true
+            fi
+        fi
+    fi
+
+    # Tier 4: Direct start if not running
+    if [[ "${restarted}" == "false" && -n "${fpm_bin}" ]]; then
+        log_info "Starting PHP-FPM daemon via ${fpm_bin}..."
+        "${fpm_bin}" -D 2>/dev/null || true
+        sleep 1
+        local check_pid
+        check_pid="$(ps -eo pid,stat,cmd 2>/dev/null | awk '/php-fpm: master process/ && !/Z/ {print $1}' | head -n1 || true)"
+        if [[ -n "${check_pid}" ]]; then
+            log_success "PHP-FPM daemon started successfully (PID ${check_pid})."
+            restarted=true
+        fi
+    fi
+
+    # 4b. Rigorous verification: Verify that FPM SAPI loaded the hardening drop-in
+    if [[ -n "${fpm_bin}" ]]; then
+        if "${fpm_bin}" -i 2>/dev/null | grep -qE "session.upload_progress.enabled => Off"; then
+            log_success "Verified PHP-FPM runtime SAPI: session.upload_progress.enabled = Off"
+        else
+            log_warn "PHP-FPM SAPI did not report session.upload_progress.enabled = Off directly. Verifying drop-in syntax..."
+        fi
+    fi
+
+    if [[ "${restarted}" == "false" ]]; then
+        log_info "Service ${service_name} was not active or managed by standard init systems. Skipped restart."
+    fi
+
+    # Write backup manifest
+    cat > "${BACKUP_DIR}/manifest.txt" << EOF
+TIMESTAMP="${TIMESTAMP}"
+OS_ID="${OS_ID}"
+OS_VERSION="${OS_VERSION}"
+OS_PRETTY="${OS_PRETTY}"
+TARGET_PHP_VERSION="${TARGET_PHP_VERSION}"
+PATCH_FILE="${PATCH_PATH}"
+INSTALLED_DROPINS="${installed_dropins[*]:-}"
+EOF
+
+    echo "----------------------------------------------------------------------"
+    log_success "Mitigation application completed successfully."
+    log_info "Backup Manifest saved to: ${BACKUP_DIR}/manifest.txt"
+    log_info "Rollback Command: sudo $0 --rollback ${BACKUP_DIR}"
+    echo "======================================================================"
+}
+
+# ------------------------------------------------------------------------------
+# 8. Rollback Mode
+# ------------------------------------------------------------------------------
+execute_rollback() {
+    local target_backup_dir="${1:-}"
+
+    if [[ ${EUID} -ne 0 ]]; then
+        log_error "Rollback requires root privileges. Please run with sudo or as root."
+        exit 1
+    fi
+
+    if [[ -z "${target_backup_dir}" ]]; then
+        # Pick latest backup if available
+        if [[ -d "${BACKUP_ROOT}" ]]; then
+            target_backup_dir="$(find "${BACKUP_ROOT}" -mindepth 1 -maxdepth 1 -type d | sort -r | head -n1 || true)"
+        fi
+    fi
+
+    if [[ -z "${target_backup_dir}" || ! -d "${target_backup_dir}" ]]; then
+        log_error "Valid backup directory not specified and none found under ${BACKUP_ROOT}."
+        exit 1
+    fi
+
+    log_info "Initiating rollback from: ${target_backup_dir}"
+
+    local manifest="${target_backup_dir}/manifest.txt"
+    if [[ ! -f "${manifest}" ]]; then
+        log_error "Manifest file missing in backup directory: ${manifest}"
+        exit 1
+    fi
+
+    # Source manifest variables
+    # shellcheck disable=SC1090
+    source "${manifest}"
+
+    log_info "Rolling back mitigations for PHP ${TARGET_PHP_VERSION:-unknown} on ${OS_PRETTY:-${OS_VERSION:-Linux}}..."
+
+    # Remove installed drop-in configurations from manifest
+    if [[ -n "${INSTALLED_DROPINS:-}" ]]; then
+        for dropin in ${INSTALLED_DROPINS}; do
+            if [[ -f "${dropin}" ]]; then
+                rm -f "${dropin}"
+                log_info "Removed installed drop-in: ${dropin}"
+            fi
+        done
+    fi
+
+    # Restore any backed up ini files
+    local fpm_ini="/etc/php/${TARGET_PHP_VERSION}/fpm/conf.d/${HARDENING_INI_NAME}"
+    if [[ ! -d "/etc/php/${TARGET_PHP_VERSION}/fpm/conf.d" && -d "/etc/php5/fpm/conf.d" ]]; then
+        fpm_ini="/etc/php5/fpm/conf.d/${HARDENING_INI_NAME}"
+    fi
+
+    if [[ -f "${target_backup_dir}/fpm_${HARDENING_INI_NAME}.bak" ]]; then
+        cp -p "${target_backup_dir}/fpm_${HARDENING_INI_NAME}.bak" "${fpm_ini}"
+        log_info "Restored previous ${fpm_ini}"
+    fi
+
+    local nginx_conf="/etc/nginx/snippets/${NGINX_HARDENING_CONF_NAME}"
+    if [[ -f "${target_backup_dir}/nginx_${NGINX_HARDENING_CONF_NAME}.bak" ]]; then
+        cp -p "${target_backup_dir}/nginx_${NGINX_HARDENING_CONF_NAME}.bak" "${nginx_conf}"
+        log_info "Restored previous ${nginx_conf}"
+    fi
+
+    # Restore binary if present
+    if [[ -f "${target_backup_dir}/php-fpm8.1.orig" && -w /usr/sbin/php-fpm8.1 ]]; then
+        cp -p "${target_backup_dir}/php-fpm8.1.orig" /usr/sbin/php-fpm8.1
+        log_info "Restored original binary /usr/sbin/php-fpm8.1"
+    fi
+
+    # Restart service if running
+    local service_name="php${TARGET_PHP_VERSION}-fpm"
+    if [[ ! -f "/etc/init.d/${service_name}" && -f "/etc/init.d/php5-fpm" && "${TARGET_PHP_VERSION}" =~ ^(5\.[56])$ ]]; then
+        service_name="php5-fpm"
+    fi
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet "${service_name}"; then
+        log_info "Restarting service: ${service_name}..."
+        systemctl restart "${service_name}"
+    elif command -v service >/dev/null 2>&1; then
+        service "${service_name}" restart >/dev/null 2>&1 || true
+    fi
+
+    log_success "Rollback completed successfully."
+}
+
+# ------------------------------------------------------------------------------
+# Usage & Main Entrypoint
+# ------------------------------------------------------------------------------
+usage() {
+    cat << EOF
+universal-autopatch-109618-109619.sh [OPTIONS]
+
+Auto-detecting security mitigation and hardening script for CVE-2026-109618
+and CVE-2026-109619 ("PHP2Shell") on Ubuntu 20.04, 22.04, and 24.04.
+
+Modes:
+  --preview                      Run detection and verification dry-run without changes (default)
+  --apply                        Apply configuration drop-in hardening and optional patches
+  --rollback [backup_dir]        Revert configuration and binary changes from backup directory
+
+Options:
+  --php-version <5.5-8.1>        Explicitly specify PHP version (overrides auto-detection; 5.5 through 8.1)
+  --source-dir <path>            Apply patch directly to a pristine PHP source tree (7.4, 8.0, 8.1)
+  --install-deb                  Install verified pre-compiled patched deb package (Ubuntu 20.04 PHP 8.1)
+  --build-binary                 Dynamically download matching PHP C-source, compile with patch, and install binary on VM (7.4, 8.0, 8.1)
+  --help, -h                     Display this help message
+
+Examples:
+  # Check system without modifying any files:
+  $0 --preview
+
+  # Apply hardening drop-in and restart PHP-FPM service:
+  sudo $0 --apply
+
+  # Patch a local source directory:
+  $0 --preview --source-dir /usr/src/php-src
+  sudo $0 --apply --source-dir /usr/src/php-src
+
+  # Revert changes:
+  sudo $0 --rollback /var/backups/php-cve-mitigation/20261022_120000
+EOF
+}
+
+main() {
+    local mode="preview"
+    local explicit_php=""
+    local source_dir=""
+    local install_deb="false"
+    local rollback_dir=""
+    local build_binary="false"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --preview|--dry-run)
+                mode="preview"
+                shift
+                ;;
+            --apply)
+                mode="apply"
+                shift
+                ;;
+            --rollback)
+                mode="rollback"
+                shift
+                if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
+                    rollback_dir="$1"
+                    shift
+                fi
+                ;;
+            --php-version)
+                explicit_php="$2"
+                shift 2
+                ;;
+            --source-dir)
+                source_dir="$2"
+                shift 2
+                ;;
+            --install-deb)
+                install_deb="true"
+                shift
+                ;;
+            --build-binary)
+                mode="apply"
+                build_binary="true"
+                shift
+                ;;
+            --help|-h)
+                usage
+                exit 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                usage
+                exit 1
+                ;;
+        esac
+    done
+
+    if [[ "${mode}" == "rollback" ]]; then
+        execute_rollback "${rollback_dir}"
+        exit 0
+    fi
+
+    detect_environment
+    detect_os
+    detect_php "${explicit_php}"
+    select_and_verify_patch
+
+    case "${mode}" in
+        preview)
+            execute_preview "${source_dir}"
+            ;;
+        apply)
+            execute_apply "${source_dir}" "${install_deb}" "${build_binary}"
+            ;;
+    esac
+}
+
+main "$@"

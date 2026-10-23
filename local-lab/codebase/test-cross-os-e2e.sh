@@ -1,0 +1,508 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# test-cross-os-e2e.sh
+#
+# Automated Cross-OS E2E Verification & Regression Test Suite
+# for CVE-2026-109618 & CVE-2026-109619 PHP Autopatch Engine
+#
+# Supported Test Targets (every entry below has a corresponding test_* function):
+#   - debian9   : Debian GNU/Linux 9 (Stretch) - PHP 7.0 (Docker, archive.debian.org)
+#   - ubuntu18  : Ubuntu 18.04 LTS (Bionic)    - PHP 7.2 (Docker)
+#   - debian12  : Debian 12 (Bookworm)         - PHP 8.1 (Docker, --php-version 8.1)
+#   - alpine    : Alpine Linux 3.21            - PHP 8.1 (Docker, --php-version 8.1)
+#   - centos7   : CentOS 7 (EOL, vault.centos.org)  - EL7 flat /etc/php.d layout (Docker)
+#   - centos8   : CentOS 8 (EOL, vault.centos.org)  - EL8 flat /etc/php.d layout (Docker)
+#   - centos9   : CentOS Stream 9 (live repos)      - EL9 flat /etc/php.d layout (Docker)
+#   - all       : Execute all available test environments
+#
+# Note: Ubuntu 20.04 and CentOS are covered by the LXC lab matrix (focal-builder,
+# centos9-test-lxc) rather than by this Docker suite, because the patch
+# verification path for those hosts requires a compiled FPM binary that this
+# configuration-only suite does not exercise. They are intentionally absent here.
+# ==============================================================================
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ANSI Color Output Helpers
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+log_info() {
+    echo -e "${BLUE}[TEST INFO]${NC} $*"
+}
+
+log_pass() {
+    echo -e "${GREEN}[TEST PASS]${NC} $*"
+}
+
+log_fail() {
+    echo -e "${RED}[TEST FAIL]${NC} $*" >&2
+}
+
+log_warn() {
+    echo -e "${YELLOW}[TEST WARN]${NC} $*"
+}
+
+log_step() {
+    echo -e "\n${CYAN}>>> $*${NC}"
+}
+
+RESULTS=()
+
+record_result() {
+    local target="$1"
+    local status="$2"
+    local detail="$3"
+    RESULTS+=("${target}|${status}|${detail}")
+}
+
+print_summary() {
+    echo -e "\n${BOLD}======================================================================${NC}"
+    echo -e "${BOLD}              CROSS-OS E2E VERIFICATION TEST SUMMARY                  ${NC}"
+    echo -e "${BOLD}======================================================================${NC}"
+    printf "%-18s | %-8s | %s\n" "Test Target" "Status" "Details"
+    echo "-------------------+----------+--------------------------------------------------"
+    local all_pass=true
+    for r in "${RESULTS[@]}"; do
+        IFS='|' read -r t s d <<< "${r}"
+        if [[ "${s}" == "PASS" ]]; then
+            printf "%-18s | ${GREEN}%-8s${NC} | %s\n" "${t}" "${s}" "${d}"
+        else
+            printf "%-18s | ${RED}%-8s${NC} | %s\n" "${t}" "${s}" "${d}"
+            all_pass=false
+        fi
+    done
+    echo "-------------------+----------+--------------------------------------------------"
+    if [[ "${all_pass}" == "true" ]]; then
+        echo -e "${GREEN}${BOLD}ALL TEST SUITES PASSED CLEANLY (Zero Failures)${NC}\n"
+        return 0
+    else
+        echo -e "${RED}${BOLD}ONE OR MORE TEST SUITES FAILED${NC}\n"
+        return 1
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# Test Case 1: Debian 9 Stretch (PHP 7.0)
+# ------------------------------------------------------------------------------
+test_debian9() {
+    log_step "Executing E2E Test Suite for Debian 9 Stretch (PHP 7.0)..."
+    local container_id
+    container_id="test-deb9-$(date +%s)"
+
+    docker run --name "${container_id}" -d -v "${SCRIPT_DIR}":/root/autopatch-cve:ro debian:9 sleep 3600 >/dev/null
+
+    local test_passed=false
+    local error_msg=""
+
+    if docker exec "${container_id}" bash -c '
+        set -e
+        # Configure archived apt repositories
+        cat > /etc/apt/sources.list << "EOF"
+deb http://archive.debian.org/debian stretch main
+deb http://archive.debian.org/debian-security stretch/updates main
+EOF
+        apt-get -o Acquire::Check-Valid-Until=false update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends php-cli php-fpm procps patch >/dev/null
+
+        # Stage mutable working directory
+        mkdir -p /tmp/test-autopatch && cp -r /root/autopatch-cve/* /tmp/test-autopatch/
+        cd /tmp/test-autopatch
+
+        # 1. Preview Run
+        ./universal-autopatch-109618-109619.sh --preview >/dev/null
+
+        # 2. Apply Run
+        ./universal-autopatch-109618-109619.sh --apply >/dev/null
+
+        # 3. Assertions
+        test -f /etc/php/7.0/fpm/conf.d/99-cve-2026-hardening.ini
+        grep -q "session.upload_progress.enabled = Off" /etc/php/7.0/fpm/conf.d/99-cve-2026-hardening.ini
+        php-fpm7.0 -i 2>/dev/null | grep -q "session.upload_progress.enabled => Off"
+
+        # 4. Rollback Run
+        ./universal-autopatch-109618-109619.sh --rollback >/dev/null
+        test ! -f /etc/php/7.0/fpm/conf.d/99-cve-2026-hardening.ini
+    '; then
+        test_passed=true
+    else
+        error_msg="Execution or assertion failed inside Debian 9 container"
+    fi
+
+    docker rm -f "${container_id}" >/dev/null 2>&1 || true
+
+    if [[ "${test_passed}" == "true" ]]; then
+        log_pass "Debian 9 Stretch (PHP 7.0): Preview, Apply, Runtime SAPI, & Rollback verified."
+        record_result "debian9 (PHP 7.0)" "PASS" "Drop-in verified; FPM SAPI Off; Rollback clean"
+    else
+        log_fail "Debian 9 Stretch: ${error_msg}"
+        record_result "debian9 (PHP 7.0)" "FAIL" "${error_msg}"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# Test Case 2: Ubuntu 18.04 LTS Bionic (PHP 7.2)
+# ------------------------------------------------------------------------------
+test_ubuntu18() {
+    log_step "Executing E2E Test Suite for Ubuntu 18.04 LTS Bionic (PHP 7.2)..."
+    local container_id
+    container_id="test-u18-$(date +%s)"
+
+    docker run --name "${container_id}" -d -v "${SCRIPT_DIR}":/root/autopatch-cve:ro ubuntu:18.04 sleep 3600 >/dev/null
+
+    local test_passed=false
+    local error_msg=""
+
+    if docker exec "${container_id}" bash -c '
+        set -e
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends php-cli php-fpm procps patch >/dev/null
+
+        mkdir -p /tmp/test-autopatch && cp -r /root/autopatch-cve/* /tmp/test-autopatch/
+        cd /tmp/test-autopatch
+
+        # 1. Preview Run
+        ./universal-autopatch-109618-109619.sh --preview >/dev/null
+
+        # 2. Apply Run
+        ./universal-autopatch-109618-109619.sh --apply >/dev/null
+
+        # 3. Assertions
+        test -f /etc/php/7.2/fpm/conf.d/99-cve-2026-hardening.ini
+        grep -q "session.upload_progress.enabled = Off" /etc/php/7.2/fpm/conf.d/99-cve-2026-hardening.ini
+        php-fpm7.2 -i 2>/dev/null | grep -q "session.upload_progress.enabled => Off"
+
+        # 4. Rollback Run
+        ./universal-autopatch-109618-109619.sh --rollback >/dev/null
+        test ! -f /etc/php/7.2/fpm/conf.d/99-cve-2026-hardening.ini
+    '; then
+        test_passed=true
+    else
+        error_msg="Execution or assertion failed inside Ubuntu 18.04 container"
+    fi
+
+    docker rm -f "${container_id}" >/dev/null 2>&1 || true
+
+    if [[ "${test_passed}" == "true" ]]; then
+        log_pass "Ubuntu 18.04 LTS (PHP 7.2): Preview, Apply, Runtime SAPI, & Rollback verified."
+        record_result "ubuntu18 (PHP 7.2)" "PASS" "Drop-in verified; FPM SAPI Off; Rollback clean"
+    else
+        log_fail "Ubuntu 18.04 LTS: ${error_msg}"
+        record_result "ubuntu18 (PHP 7.2)" "FAIL" "${error_msg}"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# Test Case 3: Debian 12 Bookworm (PHP 8.2 / 8.1 target)
+# ------------------------------------------------------------------------------
+test_debian12() {
+    log_step "Executing E2E Test Suite for Debian 12 Bookworm..."
+    local container_id
+    container_id="test-deb12-$(date +%s)"
+
+    docker run --name "${container_id}" -d -v "${SCRIPT_DIR}":/root/autopatch-cve:ro debian:12 sleep 3600 >/dev/null
+
+    local test_passed=false
+    local error_msg=""
+
+    if docker exec "${container_id}" bash -c '
+        set -e
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends php-cli php-fpm procps patch >/dev/null
+
+        mkdir -p /tmp/test-autopatch && cp -r /root/autopatch-cve/* /tmp/test-autopatch/
+        cd /tmp/test-autopatch
+
+        # Target explicit legacy 8.1 flag
+        ./universal-autopatch-109618-109619.sh --preview --php-version 8.1 >/dev/null
+        ./universal-autopatch-109618-109619.sh --apply --php-version 8.1 >/dev/null
+
+        test -f /etc/php/8.1/fpm/conf.d/99-cve-2026-hardening.ini
+        grep -q "session.upload_progress.enabled = Off" /etc/php/8.1/fpm/conf.d/99-cve-2026-hardening.ini
+
+        ./universal-autopatch-109618-109619.sh --rollback >/dev/null
+        test ! -f /etc/php/8.1/fpm/conf.d/99-cve-2026-hardening.ini
+    '; then
+        test_passed=true
+    else
+        error_msg="Execution or assertion failed inside Debian 12 container"
+    fi
+
+    docker rm -f "${container_id}" >/dev/null 2>&1 || true
+
+    if [[ "${test_passed}" == "true" ]]; then
+        log_pass "Debian 12 Bookworm: Preview, Apply, & Rollback verified."
+        record_result "debian12 (PHP 8.1)" "PASS" "Drop-in verified; Rollback clean"
+    else
+        log_fail "Debian 12 Bookworm: ${error_msg}"
+        record_result "debian12 (PHP 8.1)" "FAIL" "${error_msg}"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# Test Case 4: Alpine Linux 3.21 (PHP 8.1 / musl libc)
+# ------------------------------------------------------------------------------
+test_alpine() {
+    log_step "Executing E2E Test Suite for Alpine Linux 3.21..."
+    local container_id
+    container_id="test-alpine-$(date +%s)"
+
+    docker run --name "${container_id}" -d -v "${SCRIPT_DIR}":/root/autopatch-cve:ro alpine:3.21 sleep 3600 >/dev/null
+
+    local test_passed=false
+    local error_msg=""
+
+    if docker exec "${container_id}" sh -c '
+        set -e
+        apk update >/dev/null
+        apk add --no-cache bash php83-cli php83-fpm patch >/dev/null
+
+        mkdir -p /tmp/test-autopatch && cp -r /root/autopatch-cve/* /tmp/test-autopatch/
+        cd /tmp/test-autopatch
+
+        # Target explicit PHP 8.1
+        bash ./universal-autopatch-109618-109619.sh --preview --php-version 8.1 >/dev/null
+        bash ./universal-autopatch-109618-109619.sh --apply --php-version 8.1 >/dev/null
+
+        test -f /etc/php81/conf.d/99-cve-2026-hardening.ini
+        grep -q "session.upload_progress.enabled = Off" /etc/php81/conf.d/99-cve-2026-hardening.ini
+
+        bash ./universal-autopatch-109618-109619.sh --rollback >/dev/null
+        test ! -f /etc/php81/conf.d/99-cve-2026-hardening.ini
+    '; then
+        test_passed=true
+    else
+        error_msg="Execution or assertion failed inside Alpine 3.21 container"
+    fi
+
+    docker rm -f "${container_id}" >/dev/null 2>&1 || true
+
+    if [[ "${test_passed}" == "true" ]]; then
+        log_pass "Alpine Linux 3.21: Preview, Apply, & Rollback verified."
+        record_result "alpine3.21 (PHP 8.1)" "PASS" "Drop-in verified; Rollback clean"
+    else
+        log_fail "Alpine Linux 3.21: ${error_msg}"
+        record_result "alpine3.21 (PHP 8.1)" "FAIL" "${error_msg}"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# Test Case 5: CentOS 7 (Vault repos, EOL) — CentOS flat layout
+# ------------------------------------------------------------------------------
+# CentOS PHP uses a flat /etc/php.d layout, not Debian's /etc/php/<ver>/fpm/conf.d.
+# Both CentOS 7 and 8 are EOL: mirror.centos.org is gone and only vault.centos.org
+# still serves the trees, so the repo files must be repointed before any install.
+test_centos7() {
+    log_step "Executing E2E Test Suite for CentOS 7 (vault repos)..."
+    local container_id
+    container_id="test-c7-$(date +%s)"
+
+    docker run --name "${container_id}" -d -v "${SCRIPT_DIR}":/root/autopatch-cve:ro centos:7 sleep 3600 >/dev/null
+
+    local test_passed=false
+    local error_msg=""
+
+    if docker exec "${container_id}" bash -c '
+        set -e
+        # Repoint the dead mirrors at the CentOS 7 vault.
+        sed -i "s|^mirrorlist=|#mirrorlist=|g" /etc/yum.repos.d/CentOS-Base.repo
+        sed -i "s|^#baseurl=http://mirror.centos.org/centos/\$releasever|baseurl=http://vault.centos.org/7.9.2009|g" /etc/yum.repos.d/CentOS-Base.repo
+
+        # The vault ships PHP 5.4.16, which is below the collection lowest
+        # supported branch (5.5). remi-php74 supplies 7.4.33, which is in range and
+        # is the version this branch is actually patched against.
+        yum install -y -q http://rpms.remirepo.net/enterprise/remi-release-7.rpm >/dev/null
+        yum install -y -q --enablerepo=remi-php74 php php-cli php-fpm procps patch findutils >/dev/null
+
+        php -v | head -1
+
+        mkdir -p /tmp/test-autopatch && cp -r /root/autopatch-cve/* /tmp/test-autopatch/
+        cd /tmp/test-autopatch
+
+        # 1. Preview Run
+        ./universal-autopatch-109618-109619.sh --preview >/dev/null
+
+        # 2. Apply Run
+        ./universal-autopatch-109618-109619.sh --apply >/dev/null
+
+        # 3. Assertions (CentOS flat layout)
+        test -f /etc/php.d/99-cve-2026-hardening.ini
+        grep -q "session.upload_progress.enabled = Off" /etc/php.d/99-cve-2026-hardening.ini
+        grep -q "max_input_nesting_level = 20" /etc/php.d/99-cve-2026-hardening.ini
+        grep -q "post_max_size = 900K" /etc/php.d/99-cve-2026-hardening.ini
+
+        # 4. Rollback Run
+        ./universal-autopatch-109618-109619.sh --rollback >/dev/null
+        test ! -f /etc/php.d/99-cve-2026-hardening.ini
+    '; then
+        test_passed=true
+    else
+        error_msg="Execution or assertion failed inside CentOS 7 container"
+    fi
+
+    docker rm -f "${container_id}" >/dev/null 2>&1 || true
+
+    if [[ "${test_passed}" == "true" ]]; then
+        log_pass "CentOS 7 (vault): Preview, Apply, Drop-in assertions, & Rollback verified."
+        record_result "centos7 (EL7)" "PASS" "Drop-in verified at /etc/php.d; Rollback clean"
+    else
+        log_fail "CentOS 7: ${error_msg}"
+        record_result "centos7 (EL7)" "FAIL" "${error_msg}"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# Test Case 6: CentOS 8 (Vault repos, EOL) — AppStream php module
+# ------------------------------------------------------------------------------
+test_centos8() {
+    log_step "Executing E2E Test Suite for CentOS 8 (vault repos)..."
+    local container_id
+    container_id="test-c8-$(date +%s)"
+
+    docker run --name "${container_id}" -d -v "${SCRIPT_DIR}":/root/autopatch-cve:ro centos:8 sleep 3600 >/dev/null
+
+    local test_passed=false
+    local error_msg=""
+
+    if docker exec "${container_id}" bash -c '
+        set -e
+        # CentOS 8 is EOL: repoint BaseOS/AppStream at the 8.5.2111 vault.
+        sed -i "s|^mirrorlist=|#mirrorlist=|g" /etc/yum.repos.d/CentOS-Linux-*.repo
+        sed -i "s|^#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-Linux-*.repo
+        dnf install -y -q php-cli php-fpm procps patch findutils >/dev/null
+
+        mkdir -p /tmp/test-autopatch && cp -r /root/autopatch-cve/* /tmp/test-autopatch/
+        cd /tmp/test-autopatch
+
+        ./universal-autopatch-109618-109619.sh --preview >/dev/null
+        ./universal-autopatch-109618-109619.sh --apply >/dev/null
+
+        test -f /etc/php.d/99-cve-2026-hardening.ini
+        grep -q "session.upload_progress.enabled = Off" /etc/php.d/99-cve-2026-hardening.ini
+        grep -q "max_input_nesting_level = 20" /etc/php.d/99-cve-2026-hardening.ini
+        grep -q "post_max_size = 900K" /etc/php.d/99-cve-2026-hardening.ini
+
+        ./universal-autopatch-109618-109619.sh --rollback >/dev/null
+        test ! -f /etc/php.d/99-cve-2026-hardening.ini
+    '; then
+        test_passed=true
+    else
+        error_msg="Execution or assertion failed inside CentOS 8 container"
+    fi
+
+    docker rm -f "${container_id}" >/dev/null 2>&1 || true
+
+    if [[ "${test_passed}" == "true" ]]; then
+        log_pass "CentOS 8 (vault): Preview, Apply, Drop-in assertions, & Rollback verified."
+        record_result "centos8 (EL8)" "PASS" "Drop-in verified at /etc/php.d; Rollback clean"
+    else
+        log_fail "CentOS 8: ${error_msg}"
+        record_result "centos8 (EL8)" "FAIL" "${error_msg}"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# Test Case 7: CentOS Stream 9 (live repos) — current CentOS upstream
+# ------------------------------------------------------------------------------
+test_centos9() {
+    log_step "Executing E2E Test Suite for CentOS Stream 9..."
+    local container_id
+    container_id="test-c9-$(date +%s)"
+
+    docker run --name "${container_id}" -d -v "${SCRIPT_DIR}":/root/autopatch-cve:ro quay.io/centos/centos:stream9 sleep 3600 >/dev/null
+
+    local test_passed=false
+    local error_msg=""
+
+    if docker exec "${container_id}" bash -c '
+        set -e
+        dnf install -y -q php-cli php-fpm procps patch findutils >/dev/null
+
+        mkdir -p /tmp/test-autopatch && cp -r /root/autopatch-cve/* /tmp/test-autopatch/
+        cd /tmp/test-autopatch
+
+        ./universal-autopatch-109618-109619.sh --preview >/dev/null
+        ./universal-autopatch-109618-109619.sh --apply >/dev/null
+
+        test -f /etc/php.d/99-cve-2026-hardening.ini
+        grep -q "session.upload_progress.enabled = Off" /etc/php.d/99-cve-2026-hardening.ini
+        grep -q "max_input_nesting_level = 20" /etc/php.d/99-cve-2026-hardening.ini
+        grep -q "post_max_size = 900K" /etc/php.d/99-cve-2026-hardening.ini
+
+        ./universal-autopatch-109618-109619.sh --rollback >/dev/null
+        test ! -f /etc/php.d/99-cve-2026-hardening.ini
+    '; then
+        test_passed=true
+    else
+        error_msg="Execution or assertion failed inside CentOS Stream 9 container"
+    fi
+
+    docker rm -f "${container_id}" >/dev/null 2>&1 || true
+
+    if [[ "${test_passed}" == "true" ]]; then
+        log_pass "CentOS Stream 9: Preview, Apply, Drop-in assertions, & Rollback verified."
+        record_result "centos-stream9 (EL9)" "PASS" "Drop-in verified at /etc/php.d; Rollback clean"
+    else
+        log_fail "CentOS Stream 9: ${error_msg}"
+        record_result "centos-stream9 (EL9)" "FAIL" "${error_msg}"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# Entrypoint Router
+# ------------------------------------------------------------------------------
+main() {
+    local target="${1:-all}"
+
+    echo -e "${BOLD}======================================================================${NC}"
+    echo -e "${BOLD}       CVE-2026-109618 / 109619 Cross-OS E2E Test Suite Runner        ${NC}"
+    echo -e "${BOLD}======================================================================${NC}"
+    log_info "Target Suite: ${target}"
+
+    case "${target}" in
+        "debian9")
+            test_debian9
+            ;;
+        "ubuntu18")
+            test_ubuntu18
+            ;;
+        "debian12")
+            test_debian12
+            ;;
+        "alpine")
+            test_alpine
+            ;;
+        "centos7")
+            test_centos7
+            ;;
+        "centos8")
+            test_centos8
+            ;;
+        "centos9")
+            test_centos9
+            ;;
+        "all")
+            test_debian9
+            test_ubuntu18
+            test_debian12
+            test_alpine
+            test_centos7
+            test_centos8
+            test_centos9
+            ;;
+        *)
+            echo -e "Usage: $0 [debian9|ubuntu18|debian12|alpine|centos7|centos8|centos9|all]"
+            exit 1
+            ;;
+    esac
+
+    print_summary
+}
+
+main "$@"

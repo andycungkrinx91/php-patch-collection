@@ -11,3 +11,35 @@ AGENTS.md
 CLAUDE.md
 GEMINI.md
 ## End Konoha config+skill
+
+# Reference test documentation / prompt triggers
+php2shell-reference-test.md
+php2shell_reference_test.md
+
+# Work directories & scratch artifacts
+.cve-work/
+scratch/
+tmp/
+
+# Python byte-code & caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Node & package caches
+node_modules/
+.npm/
+.yarn/
+
+# Runtime logs & temporary backups
+*.log
+*.tmp
+*.bak
+*.swp
+*~
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
