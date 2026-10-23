@@ -156,7 +156,7 @@ internet so the failure means containment rather than a broken uplink.
 <p align="center">
   <img src="docs/images/anbu-pentest-flow.webp" alt="ANBU Controlled Pentest Verification Lifecycle" width="100%" style="width: 100%; max-width: 100%; height: auto;">
 </p>
-<p align="center"><em>Figure 3: ANBU Controlled Pentest Verification Lifecycle (Section 10 & Section 8b) (<a href="docs/images/anbu-pentest-flow.svg">Vector SVG</a>)</em></p>
+<p align="center"><em>Figure 3: ANBU Controlled Pentest Verification Lifecycle (<a href="docs/images/anbu-pentest-flow.svg">Vector SVG</a>)</em></p>
 
 Read `docs/04-oracle-finding.md` before interpreting any 502. It is the single
 most misread result this lab produces.
