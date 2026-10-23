@@ -144,12 +144,12 @@ internet so the failure means containment rather than a broken uplink.
 | [docs/images/](docs/images/) | Architecture diagram and animated flow |
 
 <p align="center">
-  <img src="docs/images/autopatch-flow.webp" alt="Universal Autopatch Execution Flow" width="720">
+  <img src="docs/images/autopatch-flow.webp" alt="Universal Autopatch Execution Flow" width="100%" style="width: 100%; max-width: 100%; height: auto;">
 </p>
 <p align="center"><em>Figure 1: Universal Autopatch Autonomous Execution Flow (<a href="docs/images/autopatch-flow.svg">Vector SVG</a>)</em></p>
 
 <p align="center">
-  <img src="docs/images/pentest-flow.webp" alt="Verification & Pentest Flow" width="720">
+  <img src="docs/images/pentest-flow.webp" alt="Verification & Pentest Flow" width="100%" style="width: 100%; max-width: 100%; height: auto;">
 </p>
 <p align="center"><em>Figure 2: Pentest and Cross-Target Verification Flow</em></p>
 
