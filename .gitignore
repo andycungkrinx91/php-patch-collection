@@ -1,0 +1,13 @@
+## Start Konoha config+skill
+.agents
+.claude*
+.codex*
+.commandcode*
+.cursor*
+.cursorrules*
+.gemini*
+.omp*
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+## End Konoha config+skill

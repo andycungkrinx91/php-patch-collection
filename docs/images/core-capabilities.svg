@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="900" height="380" viewBox="0 0 900 380" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="boxShadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0F172A" flood-opacity="0.06" />
+    </filter>
+    <linearGradient id="themeRibbon" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#17B3A3" />
+      <stop offset="33%" stop-color="#3A8DDE" />
+      <stop offset="66%" stop-color="#8A4FD0" />
+      <stop offset="100%" stop-color="#E85DA0" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="900" height="380" rx="16" fill="#FAFBFD" stroke="#E2E8F0" stroke-width="1.5" />
+  <rect x="0" y="0" width="900" height="6" rx="3" fill="url(#themeRibbon)" />
+
+  <!-- Header -->
+  <text x="450" y="36" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="14" font-weight="700" fill="#0F172A" letter-spacing="0.5">CORE ENGINEERING CAPABILITIES</text>
+
+  <!-- Card 1: Zero-Fuzz C Diffs -->
+  <g transform="translate(40, 60)">
+    <rect width="395" height="130" rx="12" fill="#FFFFFF" stroke="#3A8DDE" stroke-width="2" filter="url(#boxShadow)" />
+    <rect width="395" height="5" rx="2.5" fill="#3A8DDE" />
+    <text x="24" y="34" font-family="'Inter', system-ui, sans-serif" font-size="14" font-weight="700" fill="#0F172A">🛡️ Zero-Fuzz C-Source Diffs</text>
+    <text x="24" y="60" font-family="'Inter', system-ui, sans-serif" font-size="12" fill="#334155">Byte-for-byte pristine C patches enforcing strict</text>
+    <text x="24" y="80" font-family="'Inter', system-ui, sans-serif" font-size="12" fill="#334155"><tspan font-weight="700" fill="#2563EB">--fuzz=0</tspan> dry-run checks to prevent opcode splicing</text>
+    <text x="24" y="100" font-family="'Inter', system-ui, sans-serif" font-size="12" fill="#334155">or allocator corruption on mismatched codebases.</text>
+  </g>
+
+  <!-- Card 2: Instant SAPI Hardening -->
+  <g transform="translate(465, 60)">
+    <rect width="395" height="130" rx="12" fill="#FFFFFF" stroke="#10B981" stroke-width="2" filter="url(#boxShadow)" />
+    <rect width="395" height="5" rx="2.5" fill="#10B981" />
+    <text x="24" y="34" font-family="'Inter', system-ui, sans-serif" font-size="14" font-weight="700" fill="#0F172A">⚡ Instant SAPI Hardening</text>
+    <text x="24" y="60" font-family="'Inter', system-ui, sans-serif" font-size="12" fill="#334155">Drop-in INI configurations and reverse-proxy</text>
+    <text x="24" y="80" font-family="'Inter', system-ui, sans-serif" font-size="12" fill="#334155">perimeter filters neutralizing exploit paths via fast</text>
+    <text x="24" y="100" font-family="'Inter', system-ui, sans-serif" font-size="12" fill="#334155">FPM daemon reload without source recompilation.</text>
+  </g>
+
+  <!-- Card 3: Atomic Lifecycle Tooling -->
+  <g transform="translate(40, 210)">
+    <rect width="395" height="130" rx="12" fill="#FFFFFF" stroke="#F59E0B" stroke-width="2" filter="url(#boxShadow)" />
+    <rect width="395" height="5" rx="2.5" fill="#F59E0B" />
+    <text x="24" y="34" font-family="'Inter', system-ui, sans-serif" font-size="14" font-weight="700" fill="#0F172A">🔄 Atomic Lifecycle Tooling</text>
+    <text x="24" y="60" font-family="'Inter', system-ui, sans-serif" font-size="12" fill="#334155">Automated shell drivers providing safe <tspan font-weight="700" fill="#D97706">--preview</tspan>,</text>
+    <text x="24" y="80" font-family="'Inter', system-ui, sans-serif" font-size="12" fill="#334155">timestamped pre-change backups under <tspan font-family="monospace" fill="#0F172A">/var/backups/</tspan>,</text>
+    <text x="24" y="100" font-family="'Inter', system-ui, sans-serif" font-size="12" fill="#334155">and lossless single-command <tspan font-weight="700" fill="#D97706">--rollback</tspan>.</text>
+  </g>
+
+  <!-- Card 4: Isolated E2E Verification -->
+  <g transform="translate(465, 210)">
+    <rect width="395" height="130" rx="12" fill="#FFFFFF" stroke="#8A4FD0" stroke-width="2" filter="url(#boxShadow)" />
+    <rect width="395" height="5" rx="2.5" fill="#8A4FD0" />
+    <text x="24" y="34" font-family="'Inter', system-ui, sans-serif" font-size="14" font-weight="700" fill="#0F172A">🧪 Isolated E2E Verification</text>
+    <text x="24" y="60" font-family="'Inter', system-ui, sans-serif" font-size="12" fill="#334155">Cross-distribution container testbeds evaluating</text>
+    <text x="24" y="80" font-family="'Inter', system-ui, sans-serif" font-size="12" fill="#334155">active runtime SAPI flags (<tspan font-family="monospace" fill="#15803D">Off =&gt; Off</tspan>) across</text>
+    <text x="24" y="100" font-family="'Inter', system-ui, sans-serif" font-size="12" fill="#334155">Debian, Ubuntu, and Alpine with zero host mutation.</text>
+  </g>
+
+  <!-- Bottom Accent Ribbon -->
+  <rect x="0" y="374" width="900" height="6" rx="3" fill="url(#themeRibbon)" />
+</svg>

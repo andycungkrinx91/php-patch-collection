@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="900" height="740" viewBox="0 0 900 740" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="cardShadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0F172A" flood-opacity="0.06" />
+    </filter>
+    <linearGradient id="themeRibbon" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#17B3A3" />
+      <stop offset="33%" stop-color="#3A8DDE" />
+      <stop offset="66%" stop-color="#8A4FD0" />
+      <stop offset="100%" stop-color="#E85DA0" />
+    </linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="5" refY="4" orient="auto">
+      <path d="M 1 1.5 L 6 4 L 1 6.5 Z" fill="#64748B" />
+    </marker>
+    <filter id="glowParticle" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="900" height="740" rx="16" fill="#FAFBFD" stroke="#E2E8F0" stroke-width="1.5" />
+
+  <!-- Top Accent Ribbon -->
+  <rect x="0" y="0" width="900" height="6" rx="3" fill="url(#themeRibbon)" />
+
+  <!-- Header -->
+  <text x="450" y="32" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="14" font-weight="700" fill="#0F172A" letter-spacing="0.5">3-TIER DEFENSE-IN-DEPTH MITIGATION PIPELINE</text>
+
+  <!-- Connectors (Tracks & Animated Dashes) -->
+  <!-- Edge 1 -->
+  <path d="M 450 120 L 450 185" fill="none" stroke="#CBD5E1" stroke-width="3" stroke-linecap="round" />
+  <path class="flow-path" d="M 450 120 L 450 185" fill="none" stroke="#3A8DDE" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#arrow)" />
+  <circle r="4.5" fill="#3A8DDE" filter="url(#glowParticle)">
+    <animateMotion path="M 450 120 L 450 185" dur="1.8s" repeatCount="indefinite" />
+  </circle>
+
+  <!-- Edge 2 -->
+  <path d="M 450 280 L 450 345" fill="none" stroke="#CBD5E1" stroke-width="3" stroke-linecap="round" />
+  <path class="flow-path" d="M 450 280 L 450 345" fill="none" stroke="#8A4FD0" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#arrow)" />
+  <circle r="4.5" fill="#8A4FD0" filter="url(#glowParticle)">
+    <animateMotion path="M 450 280 L 450 345" dur="1.8s" repeatCount="indefinite" begin="0.6s" />
+  </circle>
+
+  <!-- Edge 3 -->
+  <path d="M 450 440 L 450 505" fill="none" stroke="#CBD5E1" stroke-width="3" stroke-linecap="round" />
+  <path class="flow-path" d="M 450 440 L 450 505" fill="none" stroke="#17B3A3" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#arrow)" />
+  <circle r="4.5" fill="#17B3A3" filter="url(#glowParticle)">
+    <animateMotion path="M 450 440 L 450 505" dur="1.8s" repeatCount="indefinite" begin="1.2s" />
+  </circle>
+
+  <!-- Node 1: Incoming Traffic -->
+  <g transform="translate(140, 48)">
+    <rect width="620" height="72" rx="12" fill="#FFFFFF" stroke="#3A8DDE" stroke-width="2" filter="url(#cardShadow)" />
+    <rect width="620" height="5" rx="2.5" fill="#3A8DDE" />
+    <text x="310" y="32" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="14" font-weight="700" fill="#0F172A">INCOMING HTTP / HTTPS TRAFFIC</text>
+    <text x="310" y="54" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="12" fill="#64748B">Untrusted web clients, reverse proxies, and multipart form upload payloads</text>
+  </g>
+
+  <!-- Node 2: Layer 1 Edge Filter -->
+  <g transform="translate(140, 185)">
+    <rect width="620" height="95" rx="12" fill="#FFFFFF" stroke="#E8453C" stroke-width="2" filter="url(#cardShadow)" />
+    <rect width="620" height="5" rx="2.5" fill="#E8453C" />
+    <text x="30" y="30" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="700" fill="#E8453C">LAYER 1: EDGE PERIMETER PROTECTION</text>
+    <text x="30" y="52" font-family="'Inter', system-ui, sans-serif" font-size="12" font-weight="600" fill="#1E293B">Nginx Perimeter Filter (cve-2026-hardening.conf)</text>
+    <text x="30" y="74" font-family="'Inter', system-ui, sans-serif" font-size="11" fill="#64748B">• Rejects query string &amp; URI upload progress poisoning (HTTP 403 Forbidden)</text>
+    <text x="30" y="89" font-family="'Inter', system-ui, sans-serif" font-size="11" fill="#64748B">• Rejects CRLF header injection in Content-Type boundaries (HTTP 400 Bad Request)</text>
+  </g>
+
+  <!-- Node 3: Layer 2 SAPI Hardening -->
+  <g transform="translate(140, 345)">
+    <rect width="620" height="95" rx="12" fill="#FFFFFF" stroke="#F08A24" stroke-width="2" filter="url(#cardShadow)" />
+    <rect width="620" height="5" rx="2.5" fill="#F08A24" />
+    <text x="30" y="30" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="700" fill="#F08A24">LAYER 2: RUNTIME SAPI CONFIGURATION HARDENING</text>
+    <text x="30" y="52" font-family="'Inter', system-ui, sans-serif" font-size="12" font-weight="600" fill="#1E293B">PHP-FPM Drop-in INI (99-cve-2026-hardening.ini)</text>
+    <text x="30" y="74" font-family="'Inter', system-ui, sans-serif" font-size="11" fill="#64748B">• Enforces session.upload_progress.enabled = Off strictly across FPM pools</text>
+    <text x="30" y="89" font-family="'Inter', system-ui, sans-serif" font-size="11" fill="#64748B">• Neutralizes exploit vector via fast daemon reload (zero C recompilation)</text>
+  </g>
+
+  <!-- Node 4: Layer 3 C-Patch -->
+  <g transform="translate(140, 505)">
+    <rect width="620" height="95" rx="12" fill="#FFFFFF" stroke="#17B3A3" stroke-width="2" filter="url(#cardShadow)" />
+    <rect width="620" height="5" rx="2.5" fill="#17B3A3" />
+    <text x="30" y="30" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="700" fill="#17B3A3">LAYER 3: CORE BINARY SOURCE MITIGATION</text>
+    <text x="30" y="52" font-family="'Inter', system-ui, sans-serif" font-size="12" font-weight="600" fill="#1E293B">Zend Engine C-Source Mitigation (zend_alloc.c &amp; session.c)</text>
+    <text x="30" y="74" font-family="'Inter', system-ui, sans-serif" font-size="11" fill="#64748B">• Enforces _exit(1) on allocator bailout, eliminating cross-request heap reuse</text>
+    <text x="30" y="89" font-family="'Inter', system-ui, sans-serif" font-size="11" fill="#64748B">• Bypasses upload progress callback; applied with strict --fuzz=0 verification</text>
+  </g>
+
+  <!-- Result Banner -->
+  <g transform="translate(140, 620)">
+    <rect width="620" height="48" rx="8" fill="#F0FDF4" stroke="#86EFAC" stroke-width="1.5" />
+    <text x="310" y="29" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="12" font-weight="700" fill="#166534">RESULT: Complete Heap Integrity &amp; Multi-Tier Protection (Zero Residual Exposure)</text>
+  </g>
+
+  <!-- Bottom Accent Ribbon -->
+  <rect x="0" y="734" width="900" height="6" rx="3" fill="url(#themeRibbon)" />
+</svg>
