@@ -40,6 +40,7 @@ If this collection helps protect your infrastructure or saves your engineering t
   <a href="#quick-start">Quick Start</a> •
   <a href="#empirical-verification-test-matrix">Testing</a> •
   <a href="#adding-a-new-cve-suite">Contributing</a> •
+  <a href="CHANGELOG.md">Changelog</a> •
   <a href="#author">Author</a> •
   <a href="#license">License</a>
 </p>
