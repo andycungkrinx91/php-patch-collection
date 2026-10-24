@@ -5,6 +5,31 @@ All notable changes to the PHP Core CVE Patch Collection will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-24
+
+### Added
+- **CVE-2026-115560 Mitigation Package**:
+  - Unified C-source patches and standalone range patches covering PHP 5.5 through 8.4 (`cve-2026-115560/`).
+  - Surgical key sanitization in `ext/session/session.c` restricting upload progress keys to `[a-zA-Z0-9_.-]` (length 1–128) and blocking serializer delimiters while preserving legitimate upload progress.
+  - SAPI runtime hardening INI drop-in (`99-cve-2026-115560-hardening.ini`) disabling `session.upload_progress.enabled` with isolated configuration namespaces.
+  - Perimeter defense snippet (`cve-2026-115560-hardening.conf`) dropping query string markers and blocking CRLF multipart boundary injection with HTTP 403.
+  - Universal autopatch CLI driver (`universal-autopatch-115560.sh`) with `--preview`, `--apply`, `--rollback`, non-blocking SIGUSR2 reload, and FPM listen autodetection (TCP & UNIX sockets).
+  - Cross-OS container regression harness (`test-cross-os-e2e.sh`) verifying Debian 12, Alpine Linux 3.21, and PHP 8.4 FPM.
+  - Multi-stage Docker builder samples for Ubuntu 24.04 and Alpine Linux (`docker-image/`).
+  - Dedicated tooling suite under `cve-2026-115560/tools/` enforcing strict per-CVE tooling isolation.
+  - Formal audit reports published under `docs/test-report/`:
+    - `cve-2026-115560_session-upload-progress_20261024.pdf`
+    - `cve-2026-115560-coverage-metrix.xlsx`
+    - `cve-2026-115560-patch-verify.pdf`
+  - High-resolution SVG diagrams (`cve-115560-defense-in-depth.svg`, `autopatch-flow.svg`, `lab-topology.svg`).
+
+### Changed
+- **Multi-CVE Coexistence Analysis**:
+  - Documented sequential patchability of CVE-109618-109619 and CVE-2026-115560 on shared PHP 8.1 trees without clobbering (`--fuzz=0`).
+  - Isolated SAPI configuration drop-in filenames to prevent clobbering input nesting limits.
+
+---
+
 ## [1.1.0] - 2026-10-24
 
 ### Added
