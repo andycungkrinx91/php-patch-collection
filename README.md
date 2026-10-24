@@ -95,13 +95,13 @@ Each security mitigation suite is maintained in an isolated directory (`cve-<id>
 
 ### Components in `cve-2026-115560/`
 
-- **Clean Source Patches**: Source diffs provided for PHP 5.5 through 8.4 (`php5.5-cve-115560.patch` through `php8.4-cve-115560.patch`). Live C-binary compilation and surgical key sanitization empirically verified on PHP 8.1 in `ext/session/session.c` (`[a-zA-Z0-9_.-]`, length 1-128), while PHP 5.5–8.4 environments are hardened via runtime SAPI drop-in.
-- **Universal Autopatch CLI**: `universal-autopatch-115560.sh` provides autodetection, namespaced configuration drop-in injection (`99-cve-2026-115560-hardening.ini`), service signaling, and rollback across Ubuntu, Debian, CentOS, and Alpine Linux.
-- **Dynamic C-Source Rebuilder**: `compile-and-patch-vm-cve.sh` automates on-demand source retrieval, ABI header resolution, C compilation, and binary swapping for Linux VMs.
-- **Edge Perimeter Filter**: `cve-2026-115560-hardening.conf` drops queries referencing `PHP_SESSION_UPLOAD_PROGRESS` (HTTP 403) and CRLF boundary tampering (HTTP 400).
-- **Dedicated Tooling (`tools/`)**: Isolated range-patch driver (`cve-115560-range-patch.sh`), verifier (`build_115560_patches.py`), and dedicated range diffs with zero dependency on sibling tools.
-- **Container Recipes (`docker-image/`)**: Multi-stage Ubuntu 24.04 (`Dockerfile.sample`), Alpine musl (`Dockerfile.alpine`), and in-container hotpatcher (`patch-cve/`).
-- **Published Audit Reports (`docs/test-report/`)**: Threat analysis postmortem (`cve-2026-115560_session-upload-progress_20261024.pdf`), coverage matrix (`cve-2026-115560-coverage-metrix.xlsx`), and patch verification report (`cve-2026-115560-patch-verify.pdf`).
+- **Engine Patches**: Standalone unified diffs (`php5.5-cve-115560.patch` through `php8.4-cve-115560.patch`). The C patch enforces key bounding (1–128 characters) and rejects serializer delimiters in `ext/session/session.c`. C-binary compilation was verified on PHP 8.1 FPM.
+- **CLI Autopatcher**: `universal-autopatch-115560.sh` inspects the host system, injects `99-cve-2026-115560-hardening.ini`, handles non-blocking SIGUSR2 reload, and performs atomic rollback.
+- **C Source Compiler**: `compile-and-patch-vm-cve.sh` pulls source tarballs, applies patch hunks with `--fuzz=0`, and swaps running binaries in place.
+- **Perimeter Snippet**: `cve-2026-115560-hardening.conf` instructs Nginx to immediately drop `PHP_SESSION_UPLOAD_PROGRESS` query parameters with 403 Forbidden.
+- **Isolated Tooling (`tools/`)**: Range-patch runner, patch builders, and report generators dedicated solely to this CVE.
+- **Docker Recipes (`docker-image/`)**: Multi-stage Ubuntu glibc and Alpine musl container setups.
+- **Published Evidence**: Verified PDF threat postmortems and full 9-sheet Excel coverage matrices in `docs/test-report/`.
 
 ---
 
