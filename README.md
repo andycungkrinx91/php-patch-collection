@@ -88,7 +88,7 @@ Each security mitigation suite is maintained in an isolated directory (`cve-<id>
 ### Components in `cve-2026-109618-109619/`
 
 - **Clean Source Patches**: `php5.5-cve-109618-109619.patch` through `php8.1-cve-109618-109619.patch`. Neutralizes bailout memory corruption in `Zend/zend_alloc.c` and RFC1867 upload progress poisoning in `ext/session/session.c`.
-- **Universal Autopatch CLI**: `universal-autopatch-109618-109619.sh` provides autodetection, configuration drop-in injection, service signaling, and rollback across Ubuntu, Debian, CentOS/RHEL/AlmaLinux, and Alpine Linux.
+- **Universal Autopatch CLI**: `universal-autopatch-109618-109619.sh` provides autodetection, configuration drop-in injection, service signaling, and rollback across Ubuntu, Debian, CentOS, and Alpine Linux (RHEL and enterprise rebuilds are excluded fail-closed due to vendor errata).
 - **Dynamic C-Source Rebuilder**: `compile-and-patch-vm-cve.sh` automates on-demand source retrieval, ABI header resolution, C compilation, and atomic binary swapping for Linux VMs.
 - **Edge Perimeter Filter**: `cve-2026-hardening.conf` strips malicious upload progress directives at the Nginx reverse-proxy tier before reaching FastCGI sockets.
 - **Cross-OS E2E Harness**: `test-cross-os-e2e.sh` validates preview, application, SAPI flags, and rollback in disposable containers.
