@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/andycungkrinx91/konoha/master/assets/konoha_logo_kyubi.png" alt="Konoha Shield" width="130" />
-</p>
-
 <h1 align="center">PHP Core CVE Patch Collection</h1>
 
 <p align="center">
