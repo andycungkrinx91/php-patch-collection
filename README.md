@@ -81,7 +81,7 @@ Each security mitigation suite is maintained in an isolated directory (`cve-<id>
 | Directory | Target Vulnerabilities | Severity | Target PHP Versions | Remediation Layers | Documentation |
 |---|---|:---:|---|---|:---:|
 | [`cve-2026-109618-109619/`](cve-2026-109618-109619/) | **CVE-2026-109618**<br>**CVE-2026-109619**<br>*(PHP2Shell)* | **Critical**<br>`CVSS 9.8` | PHP 5.5, 5.6, 7.0, 7.1, 7.2, 7.3, 7.4, 8.0, 8.1 | • Zero-fuzz C source patches (5.5–8.1)<br>• FPM runtime INI drop-in (`upload_progress = Off`)<br>• Nginx edge perimeter filter<br>• Universal autopatch script (`universal-autopatch-*.sh`)<br>• Dynamic C compiler (`compile-and-patch-vm-cve.sh`)<br>• Multi-stage Docker builders (glibc & musl) | [**Guide**](cve-2026-109618-109619/README.md) |
-| [`cve-2026-115560/`](cve-2026-115560/) | **CVE-2026-115560**<br>*(Session Upload Progress)* | **High / RCE**<br>`Unpatched Upstream` | PHP 5.5 through PHP 8.4.xx | • Zero-fuzz C source patches (5.5–8.4)<br>• FPM runtime INI drop-in (`upload_progress = Off`)<br>• Nginx edge perimeter filter<br>• Universal autopatch script (`universal-autopatch-115560.sh`)<br>• Dynamic C compiler (`compile-and-patch-vm-cve.sh`)<br>• Multi-stage Docker builders (glibc & musl)<br>• Dedicated tools (`tools/range-patches/`)<br>• Published test reports & coverage workbook | [**Guide**](cve-2026-115560/README.md) |
+| [`cve-2026-115560/`](cve-2026-115560/) | **CVE-2026-115560**<br>*(Session Upload Progress)* | **High / RCE**<br>`Unpatched Upstream` | PHP 5.5 through PHP 8.4.xx | • Zero-fuzz C source diffs (5.5–8.4; C-binary on 8.1)<br>• FPM runtime INI drop-in (`upload_progress = Off`)<br>• Nginx edge perimeter filter<br>• Universal autopatch script (`universal-autopatch-115560.sh`)<br>• Dynamic C compiler (`compile-and-patch-vm-cve.sh`)<br>• Multi-stage Docker builders (glibc & musl)<br>• Dedicated tools (`tools/range-patches/`)<br>• Published test reports & coverage workbook | [**Guide**](cve-2026-115560/README.md) |
 
 ### Components in `cve-2026-109618-109619/`
 
@@ -95,7 +95,7 @@ Each security mitigation suite is maintained in an isolated directory (`cve-<id>
 
 ### Components in `cve-2026-115560/`
 
-- **Clean Source Patches**: `php5.5-cve-115560.patch` through `php8.1-cve-115560.patch`. Sanitizes RFC1867 upload progress keys (`[a-zA-Z0-9_.-]`, length 1-128) in `ext/session/session.c` to reject injection delimiters while preserving legitimate progress tracking.
+- **Clean Source Patches**: Source diffs provided for PHP 5.5 through 8.4 (`php5.5-cve-115560.patch` through `php8.4-cve-115560.patch`). Live C-binary compilation and surgical key sanitization empirically verified on PHP 8.1 in `ext/session/session.c` (`[a-zA-Z0-9_.-]`, length 1-128), while PHP 5.5–8.4 environments are hardened via runtime SAPI drop-in.
 - **Universal Autopatch CLI**: `universal-autopatch-115560.sh` provides autodetection, namespaced configuration drop-in injection (`99-cve-2026-115560-hardening.ini`), service signaling, and rollback across Ubuntu, Debian, CentOS, and Alpine Linux.
 - **Dynamic C-Source Rebuilder**: `compile-and-patch-vm-cve.sh` automates on-demand source retrieval, ABI header resolution, C compilation, and binary swapping for Linux VMs.
 - **Edge Perimeter Filter**: `cve-2026-115560-hardening.conf` drops queries referencing `PHP_SESSION_UPLOAD_PROGRESS` (HTTP 403) and CRLF boundary tampering (HTTP 400).

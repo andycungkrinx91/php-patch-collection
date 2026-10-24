@@ -9,12 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **CVE-2026-115560 Mitigation Package**:
-  - Unified C-source patches and standalone range patches covering PHP 5.5 through 8.4 (`cve-2026-115560/`).
-  - Surgical key sanitization in `ext/session/session.c` restricting upload progress keys to `[a-zA-Z0-9_.-]` (length 1–128) and blocking serializer delimiters while preserving legitimate upload progress.
-  - SAPI runtime hardening INI drop-in (`99-cve-2026-115560-hardening.ini`) disabling `session.upload_progress.enabled` with isolated configuration namespaces.
+  - Unified C-source diffs and standalone range patches covering PHP 5.5 through 8.4 (`cve-2026-115560/`), verified for zero-fuzz dry-apply integrity across source trees.
+  - Live C-binary compilation and surgical key sanitization empirically verified on PHP 8.1 (`php-fpm8.1.cve115560_proper`) in `ext/session/session.c` (`[a-zA-Z0-9_.-]`, length 1–128) preserving valid progress keys.
+  - SAPI runtime hardening INI drop-in (`99-cve-2026-115560-hardening.ini`) disabling `session.upload_progress.enabled` verified with status `RUNTIME-CONFIG PASS` across 9 sampled targets (PHP 5.5–8.4).
   - Perimeter defense snippet (`cve-2026-115560-hardening.conf`) dropping query string markers and blocking CRLF multipart boundary injection with HTTP 403.
   - Universal autopatch CLI driver (`universal-autopatch-115560.sh`) with `--preview`, `--apply`, `--rollback`, non-blocking SIGUSR2 reload, and FPM listen autodetection (TCP & UNIX sockets).
-  - Cross-OS container regression harness (`test-cross-os-e2e.sh`) verifying Debian 12, Alpine Linux 3.21, and PHP 8.4 FPM.
+  - Cross-OS container regression harness (`test-cross-os-e2e.sh`) verifying runtime configuration hardening across Debian 12, Alpine Linux 3.21, and PHP 8.4 FPM.
   - Multi-stage Docker builder samples for Ubuntu 24.04 and Alpine Linux (`docker-image/`).
   - Dedicated tooling suite under `cve-2026-115560/tools/` enforcing strict per-CVE tooling isolation.
   - Formal audit reports published under `docs/test-report/`:
