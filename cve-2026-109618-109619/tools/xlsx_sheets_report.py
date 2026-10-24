@@ -177,7 +177,7 @@ def sheet_patch_inventory(wb):
         5,
         ["Property", "Value", "Interpretation", "Status"],
         [
-            ["Total .patch files", 47, "Across 55 directories", "n/a"],
+            ["Total .patch files", 47, "Across 55 directories", "VERIFIED"],
             [
                 "Unique contents (by sha256)",
                 19,
@@ -212,7 +212,7 @@ def sheet_patch_inventory(wb):
                 "Canonical location",
                 "cve-2026-109618-109619/<branch>-cve-109618-109619.patch",
                 "Always authoritative; other copies are build-context mirrors",
-                "n/a",
+                "VERIFIED",
             ],
             [
                 "Drift detection",
