@@ -26,7 +26,9 @@ actually gone.
 ## Quick start
 
 ```bash
-cd local-lab
+git clone https://github.com/andycungkrinx91/php-patch-collection.git
+cd php-patch-collection/local-lab
+
 ./setup.sh preflight     # check the host can run this
 ./setup.sh provision     # build the lab
 ./setup.sh scan          # verify every target

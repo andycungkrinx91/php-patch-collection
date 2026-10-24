@@ -120,14 +120,18 @@ The collection enforces a multi-tier defense-in-depth model so teams can deploy 
 
 ## Quick Start
 
-All tools are located inside their respective CVE directories. To evaluate and deploy protections for CVE-2026-109618 / 109619:
+### 0. Clone Repository
+
+```bash
+git clone https://github.com/andycungkrinx91/php-patch-collection.git
+cd php-patch-collection/cve-2026-109618-109619
+```
 
 ### 1. Safe Inspection (Zero File Changes)
 
 Run the universal autopatcher in preview mode to inspect your system, identify active PHP SAPIs, and check patch compatibility:
 
 ```bash
-cd cve-2026-109618-109619
 ./universal-autopatch-109618-109619.sh --preview
 ```
 
