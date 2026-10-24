@@ -19,7 +19,7 @@
   <img src="https://img.shields.io/badge/PHP-5.5_to_8.1_EOL-777BB4?style=for-the-badge&logo=php&logoColor=white" alt="PHP 5.5 to 8.1" />
   <img src="https://img.shields.io/badge/Ubuntu-14.04_to_24.04_LTS-E95420?style=for-the-badge&logo=ubuntu&logoColor=white" alt="Ubuntu Linux" />
   <img src="https://img.shields.io/badge/Debian-7_to_13-A81D33?style=for-the-badge&logo=debian&logoColor=white" alt="Debian GNU/Linux" />
-  <img src="https://img.shields.io/badge/RHEL_%2F_CentOS-6_to_9-EE0000?style=for-the-badge&logo=redhat&logoColor=white" alt="RHEL / CentOS" />
+  <img src="https://img.shields.io/badge/CentOS-6_to_9-262577?style=for-the-badge&logo=centos&logoColor=white" alt="CentOS" />
   <img src="https://img.shields.io/badge/Alpine_Linux-3.16_to_3.24%2B-0D597F?style=for-the-badge&logo=alpinelinux&logoColor=white" alt="Alpine Linux" />
 </p>
 
@@ -174,11 +174,14 @@ cd cve-2026-109618-109619
 | **`ubuntu18`** | Ubuntu 18.04 LTS Bionic | PHP 7.2.24 | FPM Runtime | `PASS` | Preview, drop-in injection, live SAPI `Off`, and rollback verified |
 | **`debian12`** | Debian 12 Bookworm | PHP 8.1 target | FPM Runtime | `PASS` | Target drop-in generation, file verification, and rollback verified |
 | **`alpine`** | Alpine Linux 3.21 | PHP 8.1 target | FPM Runtime | `PASS` | Musl libc drop-in generation, syntax test, and rollback verified |
+| **`centos7`** | CentOS 7.9 (EOL vault) | PHP 7.4.33 (remi) | FPM Runtime | `PASS` | Flat `/etc/php.d` drop-in injection, SAPI verification, and rollback |
+| **`centos8`** | CentOS 8.5 (EOL vault) | PHP 7.4.33 target | FPM Runtime | `PASS` | Flat `/etc/php.d` drop-in injection, SAPI verification, and rollback |
+| **`centos9`** | CentOS Stream 9 | PHP 8.0.30 target | FPM Runtime | `PASS` | Flat `/etc/php.d` drop-in injection, SAPI verification, and rollback |
 
 ### Tooling Coverage vs. Empirical Verification
 
-- **Platform Badges & Autodetection**: The platform badges above represent the OS detection and path-routing capability implemented in `universal-autopatch-109618-109619.sh` (Ubuntu 14.04–24.04, Debian 7–13, EL 6–9, Alpine 3.16+).
-- **Automated Container Evidence**: Automated E2E verification is actively executed in isolated Docker containers for the four primary targets (`debian9`, `ubuntu18`, `debian12`, `alpine3.21`), where 4 of 4 suites pass cleanly with zero failures.
+- **Platform Badges & Autodetection**: The platform badges above represent the OS detection and path-routing capability implemented in `universal-autopatch-109618-109619.sh` (Ubuntu 14.04–24.04, Debian 7–13, CentOS 6–9, Alpine 3.16+).
+- **Automated Container Evidence**: Automated E2E verification is actively executed in isolated Docker containers for the test targets (`debian9`, `ubuntu18`, `debian12`, `alpine`, `centos7`, `centos8`, `centos9`), where all suites pass cleanly with zero failures.
 - **Nginx Edge Filter**: `cve-2026-hardening.conf` returns HTTP 403 on requests matching `PHP_SESSION_UPLOAD_PROGRESS` and HTTP 400 on header line breaks (`[\r\n]`) in `Content-Type`.
 - **Runtime SAPI Hardening**: Applying configuration drop-ins signals PHP-FPM via daemon reload/restart without requiring a C compiler. In testing, `php-fpm -i` confirms that `session.upload_progress.enabled` is enforced to `Off`.
 

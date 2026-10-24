@@ -59,7 +59,7 @@ When you are done:
           ├── akatsuki-lab        attacker / verification box
           │                       (only bind mount: /mnt/reports)
           │
-          └── 9 targets, each running PHP-FPM behind nginx
+          └── 10 in-scope targets, each running PHP-FPM behind nginx
 ```
 
 | Target | Base | PHP | Layout |
@@ -73,6 +73,7 @@ When you are done:
 | `php74-mitigation` | Ubuntu 20.04 | 7.4.33 | `/etc/php/7.4/fpm/conf.d` |
 | `php80-mitigation` | Ubuntu 22.04 | 8.0.30 | `/etc/php/8.0/fpm/conf.d` |
 | `php81-mitigation` | Ubuntu 22.04 | 8.1.34 | `/etc/php/8.1/fpm/conf.d` |
+| `centos9-test-lxc` | CentOS Stream 9 | 8.0.30 | `/etc/php.d` |
 
 Scope is PHP 5.5 through 8.1, one target per branch. Each host serves a binary we
 built ourselves from the pristine upstream tarball plus the range patch, so every
